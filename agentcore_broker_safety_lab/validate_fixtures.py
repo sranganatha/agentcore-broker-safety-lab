@@ -9,6 +9,7 @@ import re
 from typing import Any
 
 from .contracts import BrokerTask, ContractError, ErrorCode
+from .gateway_contract import evaluate_gateway_case, gateway_action
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -111,13 +112,104 @@ def validate_cases(runbook_identities: dict[tuple[str, str], tuple[str, str]]) -
             raise ContractError(ErrorCode.INVALID_REQUEST, f"case {case['case_id']} expectation does not match its runbook")
 
 
+def validate_gateway_contract() -> None:
+    tools = _load_json("tools.json")
+    cases = _load_json("gateway_policy_cases.json")
+    if not isinstance(cases, list) or not cases:
+        raise ContractError(ErrorCode.INVALID_REQUEST, "gateway_policy_cases.json must contain cases")
+    case_ids: set[str] = set()
+    for case in cases:
+        required = {
+            "case_id",
+            "principal_type",
+            "iam_permissions",
+            "action",
+            "arguments",
+            "expected_decision",
+            "expected_layer",
+            "expected_reason",
+        }
+        if not isinstance(case, dict) or set(case) != required:
+            raise ContractError(ErrorCode.INVALID_REQUEST, "gateway policy case fields do not match the contract")
+        if case["case_id"] in case_ids:
+            raise ContractError(ErrorCode.INVALID_REQUEST, "gateway policy case IDs must be unique")
+        case_ids.add(case["case_id"])
+        actual = evaluate_gateway_case(case, tools)
+        expected = (case["expected_decision"], case["expected_layer"], case["expected_reason"])
+        if (actual.decision, actual.layer, actual.reason) != expected:
+            raise ContractError(ErrorCode.INVALID_REQUEST, f"gateway case {case['case_id']} expectation does not match")
+
+    try:
+        template = json.loads((ROOT / "infra" / "application.json").read_text(encoding="utf-8"))
+        cedar = (ROOT / "policies" / "broker.cedar").read_text(encoding="utf-8")
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ContractError(ErrorCode.INVALID_REQUEST, "cannot load Gateway infrastructure contract") from exc
+
+    resources = template.get("Resources", {})
+    gateway = resources.get("BrokerGateway", {}).get("Properties", {})
+    if gateway.get("AuthorizerType") != "AWS_IAM":
+        raise ContractError(ErrorCode.INVALID_REQUEST, "Gateway must use AWS_IAM authorization")
+    if gateway.get("PolicyEngineConfiguration", {}).get("Mode") != "LOG_ONLY":
+        raise ContractError(ErrorCode.INVALID_REQUEST, "Gateway policy engine must begin in LOG_ONLY mode")
+
+    target = resources.get("BrokerToolTarget", {}).get("Properties", {})
+    if target.get("Name") != "BrokerTools":
+        raise ContractError(ErrorCode.INVALID_REQUEST, "Gateway target name must stay BrokerTools")
+    inline_tools = target.get("TargetConfiguration", {}).get("Mcp", {}).get("Lambda", {}).get("ToolSchema", {}).get("InlinePayload")
+    if not isinstance(inline_tools, list):
+        raise ContractError(ErrorCode.INVALID_REQUEST, "Gateway target must define inline tools")
+    by_name = {tool["name"]: tool for tool in tools}
+    if {tool.get("Name") for tool in inline_tools} != set(by_name):
+        raise ContractError(ErrorCode.INVALID_REQUEST, "CloudFormation and manifest tool names differ")
+    for inline_tool in inline_tools:
+        manifest_tool = by_name[inline_tool["Name"]]
+        if inline_tool.get("Description") != manifest_tool["description"]:
+            raise ContractError(ErrorCode.INVALID_REQUEST, f"{inline_tool['Name']} descriptions differ")
+        for inline_key, manifest_key in (("InputSchema", "inputSchema"), ("OutputSchema", "outputSchema")):
+            if _normalize_cfn_schema(inline_tool.get(inline_key)) != _manifest_schema(manifest_tool[manifest_key]):
+                raise ContractError(ErrorCode.INVALID_REQUEST, f"{inline_tool['Name']} {manifest_key} differs")
+
+    policy_resource = resources.get("BrokerPolicy", {})
+    if policy_resource.get("DependsOn") != "BrokerToolTarget":
+        raise ContractError(ErrorCode.INVALID_REQUEST, "policy creation must wait for the Gateway tool schema")
+    statement = policy_resource.get("Properties", {}).get("Definition", {}).get("Cedar", {}).get("Statement", {})
+    statement_value = statement.get("Fn::Sub") if isinstance(statement, dict) else None
+    if not isinstance(statement_value, list) or statement_value[0] != cedar:
+        raise ContractError(ErrorCode.INVALID_REQUEST, "CloudFormation and broker.cedar policy statements differ")
+    for tool in tools:
+        if cedar.count(f'AgentCore::Action::"{gateway_action(tool["name"])}"') != 1:
+            raise ContractError(ErrorCode.INVALID_REQUEST, f"Cedar policy must name {tool['name']} exactly once")
+
+
+def _manifest_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in schema.items() if key != "additionalProperties"}
+
+
+def _normalize_cfn_schema(schema: Any) -> dict[str, Any]:
+    if not isinstance(schema, dict):
+        return {}
+    normalized: dict[str, Any] = {"type": schema.get("Type")}
+    if "Properties" in schema:
+        normalized["properties"] = {
+            name: _normalize_cfn_schema(value) for name, value in schema["Properties"].items()
+        }
+    if "Required" in schema:
+        normalized["required"] = schema["Required"]
+    if "Items" in schema:
+        normalized["items"] = _normalize_cfn_schema(schema["Items"])
+    if "Description" in schema:
+        normalized["description"] = schema["Description"]
+    return normalized
+
+
 def validate_all() -> None:
     validate_tools()
     runbooks = validate_runbooks()
     validate_services(runbooks)
     validate_cases(runbooks)
+    validate_gateway_contract()
 
 
 if __name__ == "__main__":
     validate_all()
-    print("validated 3 tools, 1 synthetic service, 2 runbooks, and 2 broker cases")
+    print("validated tools, synthetic fixtures, Gateway schema, policy cases, and infrastructure contract")

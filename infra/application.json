@@ -1,0 +1,272 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Governed AgentCore Gateway and policy boundary for the broker safety lab.",
+  "Parameters": {
+    "ResourceNamePrefix": {
+      "Type": "String",
+      "Default": "AgentCoreBroker",
+      "AllowedPattern": "^[A-Za-z][A-Za-z0-9]{0,23}$",
+      "Description": "Short collision-resistant prefix for named resources."
+    },
+    "ToolLambdaArn": {
+      "Type": "String",
+      "AllowedPattern": "^arn:aws[a-zA-Z-]*:lambda:[a-z0-9-]+:[0-9]{12}:function:[A-Za-z0-9-_.]+(:[A-Za-z0-9$_-]+)?$",
+      "Description": "ARN of the packaged broker tool Lambda created by the deployment slice."
+    }
+  },
+  "Resources": {
+    "BrokerPolicyEngine": {
+      "Type": "AWS::BedrockAgentCore::PolicyEngine",
+      "Properties": {
+        "Name": {"Fn::Sub": "${ResourceNamePrefix}PolicyEngine"},
+        "Description": "Authorization policies for the broker safety lab Gateway.",
+        "Tags": [
+          {"Key": "Project", "Value": "agentcore-broker-safety-lab"},
+          {"Key": "ManagedBy", "Value": "CloudFormation"}
+        ]
+      }
+    },
+    "GatewayExecutionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "Description": "Allows the AgentCore Gateway to evaluate policy and invoke the broker target.",
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {"Service": "bedrock-agentcore.amazonaws.com"},
+              "Action": "sts:AssumeRole",
+              "Condition": {
+                "StringEquals": {"aws:SourceAccount": {"Ref": "AWS::AccountId"}},
+                "ArnLike": {
+                  "aws:SourceArn": {
+                    "Fn::Sub": "arn:${AWS::Partition}:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:gateway/*"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "EvaluateBrokerPolicy",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "bedrock-agentcore:GetPolicyEngine",
+                    "bedrock-agentcore:AuthorizeAction",
+                    "bedrock-agentcore:PartiallyAuthorizeActions"
+                  ],
+                  "Resource": {"Fn::GetAtt": ["BrokerPolicyEngine", "PolicyEngineArn"]}
+                }
+              ]
+            }
+          },
+          {
+            "PolicyName": "InvokeBrokerToolTarget",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": "lambda:InvokeFunction",
+                  "Resource": {"Ref": "ToolLambdaArn"}
+                }
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {"Key": "Project", "Value": "agentcore-broker-safety-lab"},
+          {"Key": "ManagedBy", "Value": "CloudFormation"}
+        ]
+      }
+    },
+    "BrokerGateway": {
+      "Type": "AWS::BedrockAgentCore::Gateway",
+      "Properties": {
+        "Name": {"Fn::Sub": "${ResourceNamePrefix}Gateway"},
+        "Description": "IAM-authenticated MCP Gateway for the broker safety lab.",
+        "AuthorizerType": "AWS_IAM",
+        "ProtocolType": "MCP",
+        "ProtocolConfiguration": {
+          "Mcp": {"SupportedVersions": ["2025-06-18"]}
+        },
+        "RoleArn": {"Fn::GetAtt": ["GatewayExecutionRole", "Arn"]},
+        "PolicyEngineConfiguration": {
+          "Arn": {"Fn::GetAtt": ["BrokerPolicyEngine", "PolicyEngineArn"]},
+          "Mode": "LOG_ONLY"
+        },
+        "Tags": {
+          "Project": "agentcore-broker-safety-lab",
+          "ManagedBy": "CloudFormation"
+        }
+      }
+    },
+    "BrokerToolTarget": {
+      "Type": "AWS::BedrockAgentCore::GatewayTarget",
+      "Properties": {
+        "GatewayIdentifier": {"Ref": "BrokerGateway"},
+        "Name": "BrokerTools",
+        "Description": "Three bounded synthetic operations tools.",
+        "TargetConfiguration": {
+          "Mcp": {
+            "Lambda": {
+              "LambdaArn": {"Ref": "ToolLambdaArn"},
+              "ToolSchema": {
+                "InlinePayload": [
+                  {
+                    "Name": "get_runbook_procedure",
+                    "Description": "Return the applicable synthetic procedure for one service alarm.",
+                    "InputSchema": {
+                      "Type": "object",
+                      "Properties": {
+                        "service_id": {"Type": "string"},
+                        "alarm_code": {"Type": "string"}
+                      },
+                      "Required": ["service_id", "alarm_code"]
+                    },
+                    "OutputSchema": {
+                      "Type": "object",
+                      "Properties": {
+                        "runbook_id": {"Type": "string"},
+                        "procedure": {"Type": "string"},
+                        "allowed_action": {"Type": "string"},
+                        "source_digest": {"Type": "string"}
+                      },
+                      "Required": ["runbook_id", "procedure", "allowed_action", "source_digest"]
+                    }
+                  },
+                  {
+                    "Name": "inspect_service",
+                    "Description": "Return deterministic synthetic health and alarm state for one service.",
+                    "InputSchema": {
+                      "Type": "object",
+                      "Properties": {
+                        "service_id": {"Type": "string"},
+                        "environment": {"Type": "string"}
+                      },
+                      "Required": ["service_id", "environment"]
+                    },
+                    "OutputSchema": {
+                      "Type": "object",
+                      "Properties": {
+                        "service_id": {"Type": "string"},
+                        "environment": {"Type": "string"},
+                        "health": {"Type": "string"},
+                        "active_alarm": {"Type": "string"}
+                      },
+                      "Required": ["service_id", "environment", "health", "active_alarm"]
+                    }
+                  },
+                  {
+                    "Name": "execute_remediation",
+                    "Description": "Execute one approved synthetic remediation with a stable idempotency key.",
+                    "InputSchema": {
+                      "Type": "object",
+                      "Properties": {
+                        "task_id": {"Type": "string"},
+                        "service_id": {"Type": "string"},
+                        "environment": {"Type": "string"},
+                        "action": {"Type": "string"},
+                        "idempotency_key": {"Type": "string"}
+                      },
+                      "Required": ["task_id", "service_id", "environment", "action", "idempotency_key"]
+                    },
+                    "OutputSchema": {
+                      "Type": "object",
+                      "Properties": {
+                        "status": {"Type": "string"},
+                        "approval_request_id": {"Type": "string"},
+                        "execution_id": {"Type": "string"},
+                        "effect_count": {"Type": "integer"}
+                      },
+                      "Required": ["status"]
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "BrokerPolicy": {
+      "Type": "AWS::BedrockAgentCore::Policy",
+      "DependsOn": "BrokerToolTarget",
+      "Properties": {
+        "Name": {"Fn::Sub": "${ResourceNamePrefix}Policy"},
+        "Description": "Allows only the synthetic service tool and argument classes.",
+        "PolicyEngineId": {"Fn::GetAtt": ["BrokerPolicyEngine", "PolicyEngineId"]},
+        "EnforcementMode": "ACTIVE",
+        "ValidationMode": "FAIL_ON_ANY_FINDINGS",
+        "Definition": {
+          "Cedar": {
+            "Statement": {
+              "Fn::Sub": [
+                "permit (\n    principal is AgentCore::IamEntity,\n    action == AgentCore::Action::\"BrokerTools___get_runbook_procedure\",\n    resource == AgentCore::Gateway::\"${GatewayArn}\"\n)\nwhen {\n    context.input.service_id == \"claims-api\" &&\n    (context.input.alarm_code == \"HIGH_ERROR_RATE\" ||\n     context.input.alarm_code == \"DATABASE_CORRUPTION\")\n};\n\npermit (\n    principal is AgentCore::IamEntity,\n    action == AgentCore::Action::\"BrokerTools___inspect_service\",\n    resource == AgentCore::Gateway::\"${GatewayArn}\"\n)\nwhen {\n    context.input.service_id == \"claims-api\" &&\n    context.input.environment == \"demo\"\n};\n\npermit (\n    principal is AgentCore::IamEntity,\n    action == AgentCore::Action::\"BrokerTools___execute_remediation\",\n    resource == AgentCore::Gateway::\"${GatewayArn}\"\n)\nwhen {\n    context.input.service_id == \"claims-api\" &&\n    context.input.environment == \"demo\" &&\n    context.input.action == \"restart_worker_pool\"\n};\n",
+                {"GatewayArn": {"Fn::GetAtt": ["BrokerGateway", "GatewayArn"]}}
+              ]
+            }
+          }
+        }
+      }
+    },
+    "GatewayLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": {"Fn::Sub": "/aws/vendedlogs/bedrock-agentcore/gateway/APPLICATION_LOGS/${BrokerGateway}"},
+        "RetentionInDays": 14,
+        "Tags": [
+          {"Key": "Project", "Value": "agentcore-broker-safety-lab"},
+          {"Key": "ManagedBy", "Value": "CloudFormation"}
+        ]
+      }
+    },
+    "GatewayLogSource": {
+      "Type": "AWS::Logs::DeliverySource",
+      "Properties": {
+        "Name": {"Fn::Sub": "${ResourceNamePrefix}-gateway-source"},
+        "LogType": "APPLICATION_LOGS",
+        "ResourceArn": {"Fn::GetAtt": ["BrokerGateway", "GatewayArn"]},
+        "Tags": [
+          {"Key": "Project", "Value": "agentcore-broker-safety-lab"}
+        ]
+      }
+    },
+    "GatewayLogDestination": {
+      "Type": "AWS::Logs::DeliveryDestination",
+      "Properties": {
+        "Name": {"Fn::Sub": "${ResourceNamePrefix}-gateway-destination"},
+        "DeliveryDestinationType": "CWL",
+        "DestinationResourceArn": {"Fn::GetAtt": ["GatewayLogGroup", "Arn"]},
+        "OutputFormat": "json",
+        "Tags": [
+          {"Key": "Project", "Value": "agentcore-broker-safety-lab"}
+        ]
+      }
+    },
+    "GatewayLogDelivery": {
+      "Type": "AWS::Logs::Delivery",
+      "Properties": {
+        "DeliverySourceName": {"Ref": "GatewayLogSource"},
+        "DeliveryDestinationArn": {"Fn::GetAtt": ["GatewayLogDestination", "Arn"]},
+        "Tags": [
+          {"Key": "Project", "Value": "agentcore-broker-safety-lab"}
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "GatewayArn": {"Value": {"Fn::GetAtt": ["BrokerGateway", "GatewayArn"]}},
+    "GatewayIdentifier": {"Value": {"Ref": "BrokerGateway"}},
+    "GatewayUrl": {"Value": {"Fn::GetAtt": ["BrokerGateway", "GatewayUrl"]}},
+    "PolicyEngineArn": {"Value": {"Fn::GetAtt": ["BrokerPolicyEngine", "PolicyEngineArn"]}},
+    "PolicyEngineMode": {"Value": "LOG_ONLY"},
+    "GatewayLogGroupName": {"Value": {"Ref": "GatewayLogGroup"}}
+  }
+}
