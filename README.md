@@ -37,6 +37,10 @@ The repository currently provides the account-free contract layer for that workf
 - Deterministic canonical action hashing
 - AgentCore-compatible JSON tool definitions
 - Original synthetic service and runbook fixtures
+- Lambda-compatible dispatch for the three validated tools
+- Exact, expiring approval state outside the public tool surface
+- Conditional in-memory and DynamoDB execution ledgers
+- Post-commit response-loss injection and receipt reconciliation
 - Boundary and fixture tests that run without a cloud account
 - A Podman-only validation path with no host Python packages
 
@@ -49,6 +53,8 @@ Cloud resources and model invocation are not represented by fixture output. They
 - Changed arguments, non-JSON values, non-finite numbers, and non-string object keys fail before hashing.
 - Receipt states enforce their required effect count and provider-operation fields.
 - Tool schemas expose only the three named lab capabilities.
+- Repeated and concurrent idempotency keys resolve to one committed synthetic effect.
+- An uncertain post-commit result is reconciled before another execution attempt.
 - Fixtures contain no real endpoint, account, customer, or production data.
 
 ## Scope
