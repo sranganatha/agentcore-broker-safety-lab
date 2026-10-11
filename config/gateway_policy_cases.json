@@ -1,0 +1,132 @@
+[
+  {
+    "case_id": "allow_runbook_read",
+    "principal_type": "AgentCore::IamEntity",
+    "iam_permissions": ["bedrock-agentcore:InvokeGateway"],
+    "action": "BrokerTools___get_runbook_procedure",
+    "arguments": {"service_id": "claims-api", "alarm_code": "HIGH_ERROR_RATE"},
+    "expected_decision": "ALLOW",
+    "expected_layer": "POLICY",
+    "expected_reason": "POLICY_PERMIT"
+  },
+  {
+    "case_id": "allow_database_escalation_runbook",
+    "principal_type": "AgentCore::IamEntity",
+    "iam_permissions": ["bedrock-agentcore:InvokeGateway"],
+    "action": "BrokerTools___get_runbook_procedure",
+    "arguments": {"service_id": "claims-api", "alarm_code": "DATABASE_CORRUPTION"},
+    "expected_decision": "ALLOW",
+    "expected_layer": "POLICY",
+    "expected_reason": "POLICY_PERMIT"
+  },
+  {
+    "case_id": "deny_other_alarm",
+    "principal_type": "AgentCore::IamEntity",
+    "iam_permissions": ["bedrock-agentcore:InvokeGateway"],
+    "action": "BrokerTools___get_runbook_procedure",
+    "arguments": {"service_id": "claims-api", "alarm_code": "DATABASE_UNAVAILABLE"},
+    "expected_decision": "DENY",
+    "expected_layer": "POLICY",
+    "expected_reason": "ARGUMENT_CLASS_NOT_ALLOWED"
+  },
+  {
+    "case_id": "allow_service_inspection",
+    "principal_type": "AgentCore::IamEntity",
+    "iam_permissions": ["bedrock-agentcore:InvokeGateway"],
+    "action": "BrokerTools___inspect_service",
+    "arguments": {"service_id": "claims-api", "environment": "demo"},
+    "expected_decision": "ALLOW",
+    "expected_layer": "POLICY",
+    "expected_reason": "POLICY_PERMIT"
+  },
+  {
+    "case_id": "deny_non_demo_environment",
+    "principal_type": "AgentCore::IamEntity",
+    "iam_permissions": ["bedrock-agentcore:InvokeGateway"],
+    "action": "BrokerTools___inspect_service",
+    "arguments": {"service_id": "claims-api", "environment": "production"},
+    "expected_decision": "DENY",
+    "expected_layer": "POLICY",
+    "expected_reason": "ARGUMENT_CLASS_NOT_ALLOWED"
+  },
+  {
+    "case_id": "allow_approved_remediation_class",
+    "principal_type": "AgentCore::IamEntity",
+    "iam_permissions": ["bedrock-agentcore:InvokeGateway"],
+    "action": "BrokerTools___execute_remediation",
+    "arguments": {"task_id": "task-policy-1", "service_id": "claims-api", "environment": "demo", "action": "restart_worker_pool", "idempotency_key": "idem-policy-1"},
+    "expected_decision": "ALLOW",
+    "expected_layer": "POLICY",
+    "expected_reason": "POLICY_PERMIT"
+  },
+  {
+    "case_id": "deny_disallowed_remediation",
+    "principal_type": "AgentCore::IamEntity",
+    "iam_permissions": ["bedrock-agentcore:InvokeGateway"],
+    "action": "BrokerTools___execute_remediation",
+    "arguments": {"task_id": "task-policy-2", "service_id": "claims-api", "environment": "demo", "action": "delete_database", "idempotency_key": "idem-policy-2"},
+    "expected_decision": "DENY",
+    "expected_layer": "POLICY",
+    "expected_reason": "ARGUMENT_CLASS_NOT_ALLOWED"
+  },
+  {
+    "case_id": "deny_other_service",
+    "principal_type": "AgentCore::IamEntity",
+    "iam_permissions": ["bedrock-agentcore:InvokeGateway"],
+    "action": "BrokerTools___execute_remediation",
+    "arguments": {"task_id": "task-policy-3", "service_id": "billing-api", "environment": "demo", "action": "restart_worker_pool", "idempotency_key": "idem-policy-3"},
+    "expected_decision": "DENY",
+    "expected_layer": "POLICY",
+    "expected_reason": "ARGUMENT_CLASS_NOT_ALLOWED"
+  },
+  {
+    "case_id": "deny_missing_invoke_permission",
+    "principal_type": "AgentCore::IamEntity",
+    "iam_permissions": [],
+    "action": "BrokerTools___inspect_service",
+    "arguments": {"service_id": "claims-api", "environment": "demo"},
+    "expected_decision": "DENY",
+    "expected_layer": "IAM",
+    "expected_reason": "MISSING_INVOKE_GATEWAY"
+  },
+  {
+    "case_id": "deny_unknown_action",
+    "principal_type": "AgentCore::IamEntity",
+    "iam_permissions": ["bedrock-agentcore:InvokeGateway"],
+    "action": "BrokerTools___delete_database",
+    "arguments": {},
+    "expected_decision": "DENY",
+    "expected_layer": "POLICY",
+    "expected_reason": "ACTION_NOT_ALLOWED"
+  },
+  {
+    "case_id": "deny_wrong_principal_type",
+    "principal_type": "AgentCore::OAuthUser",
+    "iam_permissions": ["bedrock-agentcore:InvokeGateway"],
+    "action": "BrokerTools___inspect_service",
+    "arguments": {"service_id": "claims-api", "environment": "demo"},
+    "expected_decision": "DENY",
+    "expected_layer": "POLICY",
+    "expected_reason": "PRINCIPAL_NOT_ALLOWED"
+  },
+  {
+    "case_id": "deny_extra_argument",
+    "principal_type": "AgentCore::IamEntity",
+    "iam_permissions": ["bedrock-agentcore:InvokeGateway"],
+    "action": "BrokerTools___inspect_service",
+    "arguments": {"service_id": "claims-api", "environment": "demo", "override": "true"},
+    "expected_decision": "DENY",
+    "expected_layer": "GATEWAY_SCHEMA",
+    "expected_reason": "INVALID_ARGUMENTS"
+  },
+  {
+    "case_id": "deny_wrong_argument_type",
+    "principal_type": "AgentCore::IamEntity",
+    "iam_permissions": ["bedrock-agentcore:InvokeGateway"],
+    "action": "BrokerTools___inspect_service",
+    "arguments": {"service_id": "claims-api", "environment": 1},
+    "expected_decision": "DENY",
+    "expected_layer": "GATEWAY_SCHEMA",
+    "expected_reason": "INVALID_ARGUMENTS"
+  }
+]
