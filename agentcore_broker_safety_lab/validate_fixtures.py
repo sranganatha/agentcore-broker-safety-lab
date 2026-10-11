@@ -71,6 +71,26 @@ def validate_runbooks() -> dict[tuple[str, str], tuple[str, str]]:
     return identities
 
 
+def validate_services(runbook_identities: dict[tuple[str, str], tuple[str, str]]) -> set[tuple[str, str]]:
+    services = _load_json("synthetic_services.json")
+    if not isinstance(services, list) or len(services) != 1:
+        raise ContractError(ErrorCode.INVALID_REQUEST, "synthetic_services.json must contain one service")
+    identities: set[tuple[str, str]] = set()
+    expected = {"service_id", "environment", "health", "active_alarm"}
+    for service in services:
+        if not isinstance(service, dict) or set(service) != expected:
+            raise ContractError(ErrorCode.INVALID_REQUEST, "synthetic service fields do not match the contract")
+        if any(not isinstance(service[field], str) or not service[field].strip() for field in expected):
+            raise ContractError(ErrorCode.INVALID_REQUEST, "synthetic service fields must be non-empty strings")
+        identity = (service["service_id"], service["environment"])
+        if identity in identities:
+            raise ContractError(ErrorCode.INVALID_REQUEST, "synthetic service identity must be unique")
+        if (service["service_id"], service["active_alarm"]) not in runbook_identities:
+            raise ContractError(ErrorCode.INVALID_REQUEST, "synthetic service alarm must have a runbook")
+        identities.add(identity)
+    return identities
+
+
 def validate_cases(runbook_identities: dict[tuple[str, str], tuple[str, str]]) -> None:
     cases = _load_json("cases.json")
     if not isinstance(cases, list) or len(cases) != 2:
@@ -94,9 +114,10 @@ def validate_cases(runbook_identities: dict[tuple[str, str], tuple[str, str]]) -
 def validate_all() -> None:
     validate_tools()
     runbooks = validate_runbooks()
+    validate_services(runbooks)
     validate_cases(runbooks)
 
 
 if __name__ == "__main__":
     validate_all()
-    print("validated 3 tools, 2 synthetic runbooks, and 2 broker cases")
+    print("validated 3 tools, 1 synthetic service, 2 runbooks, and 2 broker cases")

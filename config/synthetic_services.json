@@ -1,0 +1,8 @@
+[
+  {
+    "service_id": "claims-api",
+    "environment": "demo",
+    "health": "DEGRADED",
+    "active_alarm": "HIGH_ERROR_RATE"
+  }
+]
