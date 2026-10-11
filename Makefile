@@ -1,7 +1,11 @@
 IMAGE ?= agentcore-broker-safety-lab:test
 TOOLS_IMAGE ?= agentcore-broker-safety-lab:tools
+AWS_DIR ?= $(if $(USERPROFILE),$(USERPROFILE)/.aws,$(HOME)/.aws)
+AWS_REGION ?= us-east-1
+APPLICATION_STACK ?= agentcore-broker-safety-lab
+BOOTSTRAP_STACK ?= agentcore-broker-safety-lab-bootstrap
 
-.PHONY: check test test-container
+.PHONY: check cloud-image deploy-aws destroy-aws package-aws policy-enforce policy-shadow test test-container verify-aws verify-aws-enforce
 
 check:
 	podman build --file Containerfile.tools --tag $(TOOLS_IMAGE) .
@@ -13,3 +17,27 @@ test:
 	podman run --rm --network none $(IMAGE)
 
 test-container: check test
+
+cloud-image:
+	podman build --file Containerfile.tools --tag $(TOOLS_IMAGE) .
+
+package-aws: cloud-image
+	podman run --rm --network none --volume "$(CURDIR):/workspace" --workdir /workspace $(TOOLS_IMAGE) python -m scripts.package
+
+deploy-aws: package-aws
+	podman run --rm -e AWS_REGION=$(AWS_REGION) -e AWS_EC2_METADATA_DISABLED=true -e APPLICATION_STACK=$(APPLICATION_STACK) -e BOOTSTRAP_STACK=$(BOOTSTRAP_STACK) -e CONFIRM_DEPLOY=$(CONFIRM_DEPLOY) --volume "$(AWS_DIR):/root/.aws:ro" --volume "$(CURDIR):/workspace" --workdir /workspace $(TOOLS_IMAGE) python -m scripts.cloud deploy
+
+verify-aws: cloud-image
+	podman run --rm -e AWS_REGION=$(AWS_REGION) -e AWS_EC2_METADATA_DISABLED=true -e APPLICATION_STACK=$(APPLICATION_STACK) -e BOOTSTRAP_STACK=$(BOOTSTRAP_STACK) --volume "$(AWS_DIR):/root/.aws:ro" --volume "$(CURDIR):/workspace" --workdir /workspace $(TOOLS_IMAGE) python -m scripts.cloud verify --mode LOG_ONLY
+
+policy-enforce: cloud-image
+	podman run --rm -e AWS_REGION=$(AWS_REGION) -e AWS_EC2_METADATA_DISABLED=true -e APPLICATION_STACK=$(APPLICATION_STACK) -e BOOTSTRAP_STACK=$(BOOTSTRAP_STACK) -e CONFIRM_POLICY_ENFORCE=$(CONFIRM_POLICY_ENFORCE) --volume "$(AWS_DIR):/root/.aws:ro" --volume "$(CURDIR):/workspace" --workdir /workspace $(TOOLS_IMAGE) python -m scripts.cloud policy-mode --mode ENFORCE
+
+policy-shadow: cloud-image
+	podman run --rm -e AWS_REGION=$(AWS_REGION) -e AWS_EC2_METADATA_DISABLED=true -e APPLICATION_STACK=$(APPLICATION_STACK) -e BOOTSTRAP_STACK=$(BOOTSTRAP_STACK) --volume "$(AWS_DIR):/root/.aws:ro" --volume "$(CURDIR):/workspace" --workdir /workspace $(TOOLS_IMAGE) python -m scripts.cloud policy-mode --mode LOG_ONLY
+
+verify-aws-enforce: cloud-image
+	podman run --rm -e AWS_REGION=$(AWS_REGION) -e AWS_EC2_METADATA_DISABLED=true -e APPLICATION_STACK=$(APPLICATION_STACK) -e BOOTSTRAP_STACK=$(BOOTSTRAP_STACK) --volume "$(AWS_DIR):/root/.aws:ro" --volume "$(CURDIR):/workspace" --workdir /workspace $(TOOLS_IMAGE) python -m scripts.cloud verify --mode ENFORCE
+
+destroy-aws: cloud-image
+	podman run --rm -e AWS_REGION=$(AWS_REGION) -e AWS_EC2_METADATA_DISABLED=true -e APPLICATION_STACK=$(APPLICATION_STACK) -e BOOTSTRAP_STACK=$(BOOTSTRAP_STACK) -e CONFIRM_DESTROY=$(CONFIRM_DESTROY) --volume "$(AWS_DIR):/root/.aws:ro" --volume "$(CURDIR):/workspace" --workdir /workspace $(TOOLS_IMAGE) python -m scripts.cloud destroy

@@ -149,15 +149,26 @@ def validate_gateway_contract() -> None:
     gateway = resources.get("BrokerGateway", {}).get("Properties", {})
     if gateway.get("AuthorizerType") != "AWS_IAM":
         raise ContractError(ErrorCode.INVALID_REQUEST, "Gateway must use AWS_IAM authorization")
-    if gateway.get("PolicyEngineConfiguration", {}).get("Mode") != "LOG_ONLY":
+    policy_mode = template.get("Parameters", {}).get("PolicyEngineMode", {})
+    if policy_mode.get("Default") != "LOG_ONLY":
         raise ContractError(ErrorCode.INVALID_REQUEST, "Gateway policy engine must begin in LOG_ONLY mode")
+    if gateway.get("PolicyEngineConfiguration", {}).get("Mode") != {"Ref": "PolicyEngineMode"}:
+        raise ContractError(ErrorCode.INVALID_REQUEST, "Gateway policy mode must use the reviewed parameter")
 
     target = resources.get("BrokerToolTarget", {}).get("Properties", {})
     if target.get("Name") != "BrokerTools":
         raise ContractError(ErrorCode.INVALID_REQUEST, "Gateway target name must stay BrokerTools")
+    if target.get("CredentialProviderConfigurations") != [
+        {"CredentialProviderType": "GATEWAY_IAM_ROLE"}
+    ]:
+        raise ContractError(ErrorCode.INVALID_REQUEST, "Gateway target must use the scoped Gateway IAM role")
     inline_tools = target.get("TargetConfiguration", {}).get("Mcp", {}).get("Lambda", {}).get("ToolSchema", {}).get("InlinePayload")
     if not isinstance(inline_tools, list):
         raise ContractError(ErrorCode.INVALID_REQUEST, "Gateway target must define inline tools")
+    if target.get("TargetConfiguration", {}).get("Mcp", {}).get("Lambda", {}).get("LambdaArn") != {
+        "Fn::GetAtt": ["ToolLambda", "Arn"]
+    }:
+        raise ContractError(ErrorCode.INVALID_REQUEST, "Gateway target must use the stack Lambda")
     by_name = {tool["name"]: tool for tool in tools}
     if {tool.get("Name") for tool in inline_tools} != set(by_name):
         raise ContractError(ErrorCode.INVALID_REQUEST, "CloudFormation and manifest tool names differ")
@@ -169,12 +180,23 @@ def validate_gateway_contract() -> None:
             if _normalize_cfn_schema(inline_tool.get(inline_key)) != _manifest_schema(manifest_tool[manifest_key]):
                 raise ContractError(ErrorCode.INVALID_REQUEST, f"{inline_tool['Name']} {manifest_key} differs")
 
-    policy_resource = resources.get("BrokerPolicy", {})
-    if policy_resource.get("DependsOn") != "BrokerToolTarget":
-        raise ContractError(ErrorCode.INVALID_REQUEST, "policy creation must wait for the Gateway tool schema")
-    statement = policy_resource.get("Properties", {}).get("Definition", {}).get("Cedar", {}).get("Statement", {})
-    statement_value = statement.get("Fn::Sub") if isinstance(statement, dict) else None
-    if not isinstance(statement_value, list) or statement_value[0] != cedar:
+    policy_resources = [
+        resource
+        for resource in resources.values()
+        if resource.get("Type") == "AWS::BedrockAgentCore::Policy"
+    ]
+    if len(policy_resources) != len(tools):
+        raise ContractError(ErrorCode.INVALID_REQUEST, "each Gateway tool must have one policy resource")
+    deployed_statements = []
+    for policy_resource in policy_resources:
+        if policy_resource.get("DependsOn") != "BrokerToolTarget":
+            raise ContractError(ErrorCode.INVALID_REQUEST, "policy creation must wait for the Gateway tool schema")
+        statement = policy_resource.get("Properties", {}).get("Definition", {}).get("Cedar", {}).get("Statement", {})
+        statement_value = statement.get("Fn::Sub") if isinstance(statement, dict) else None
+        if not isinstance(statement_value, list) or not isinstance(statement_value[0], str):
+            raise ContractError(ErrorCode.INVALID_REQUEST, "Gateway policy must contain one Cedar statement")
+        deployed_statements.append(statement_value[0].strip())
+    if set(deployed_statements) != {statement.strip() for statement in cedar.strip().split("\n\n")}:
         raise ContractError(ErrorCode.INVALID_REQUEST, "CloudFormation and broker.cedar policy statements differ")
     for tool in tools:
         if cedar.count(f'AgentCore::Action::"{gateway_action(tool["name"])}"') != 1:
@@ -202,11 +224,15 @@ def _normalize_cfn_schema(schema: Any) -> dict[str, Any]:
     return normalized
 
 
-def validate_all() -> None:
+def validate_runtime_fixtures() -> None:
     validate_tools()
     runbooks = validate_runbooks()
     validate_services(runbooks)
     validate_cases(runbooks)
+
+
+def validate_all() -> None:
+    validate_runtime_fixtures()
     validate_gateway_contract()
 
 

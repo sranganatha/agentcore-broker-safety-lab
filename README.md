@@ -12,7 +12,7 @@ This project targets one inspectable workflow:
 
 ```text
 Synthetic service alarm
-    -> Nova Micro agent in AgentCore Runtime
+    -> agent or signed MCP client
     -> AgentCore Gateway tools
     -> AgentCore Policy decision
     -> exact approval check
@@ -20,7 +20,7 @@ Synthetic service alarm
     -> reconciliation after an uncertain outcome
 ```
 
-The AWS-backed workflow will use one AgentCore Runtime, one Gateway, one policy engine, and one Lambda target exposing three tools:
+The implemented AWS boundary uses one AgentCore Gateway, one policy engine, and one Lambda target exposing three tools:
 
 | Tool | Risk | Purpose |
 |---|---:|---|
@@ -28,9 +28,9 @@ The AWS-backed workflow will use one AgentCore Runtime, one Gateway, one policy 
 | `inspect_service` | Low | Return deterministic synthetic health and alarm state |
 | `execute_remediation` | High | Require exact approval and return one execution receipt |
 
-## Implemented foundation
+## Implemented boundary
 
-The repository currently provides the account-free contract layer for that workflow:
+The repository provides the deployable policy and execution boundary for that workflow:
 
 - Strict broker-task, approval-request, and execution-receipt contracts
 - Stable machine-readable error codes
@@ -47,9 +47,11 @@ The repository currently provides the account-free contract layer for that workf
 - Conditional in-memory and DynamoDB execution ledgers
 - Post-commit response-loss injection and receipt reconciliation
 - Boundary and fixture tests that run without a cloud account
+- Signed MCP verification in policy shadow and enforcement modes
+- Bounded CloudFormation deployment and teardown through Make and Podman
 - A Podman-only validation path with no host Python packages
 
-The offline authorization cases are a reference contract, not a Cedar runtime emulator. The CloudFormation template is linted locally but has not yet been deployed by this repository. Cloud resources and model invocation are not represented by fixture output. They will be verified separately and labeled as AWS execution evidence when implemented.
+The offline authorization cases are a reference contract, not a Cedar runtime emulator. The AWS verifier exercises the deployed Gateway and Lambda boundary directly; it does not invoke a model. Verification reports contain redacted account metadata and bounded pass/fail evidence under the ignored `artifacts/` directory.
 
 ## Security properties
 
@@ -81,9 +83,22 @@ make test-container
 
 The tooling image validates source compilation, contract drift, and CloudFormation structure. The application image then runs the complete account-free test suite. All validation containers run with networking disabled, and the host receives no Python packages.
 
+## AWS validation
+
+An authenticated AWS session, Make, and a running Podman machine are required. The deployment starts with policy evaluation in `LOG_ONLY`, verifies the live MCP boundary, then requires an explicit promotion before enforcement verification.
+
+```bash
+make deploy-aws CONFIRM_DEPLOY=agentcore-broker-safety-lab
+make verify-aws
+make policy-enforce CONFIRM_POLICY_ENFORCE=agentcore-broker-safety-lab
+make verify-aws-enforce
+make destroy-aws CONFIRM_DESTROY=agentcore-broker-safety-lab
+```
+
+The commands create only the named application and bootstrap stacks in `us-east-1` by default. Override `AWS_REGION`, `APPLICATION_STACK`, or `BOOTSTRAP_STACK` when needed; stack names must retain the `agentcore-broker-safety-lab` prefix. Teardown removes the application stack, its exact artifact prefix, and the bootstrap stack.
+
 ## Design references
 
 - [MVP specification](docs/mvp-spec.md)
 - [Workload identity boundary](docs/adr/0001-workload-identity-boundary.md)
 - [Policy and target enforcement](docs/adr/0002-policy-and-target-enforcement.md)
-- [Repository rules](AGENTS.md)

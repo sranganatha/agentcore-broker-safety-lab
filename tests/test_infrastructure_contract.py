@@ -17,12 +17,18 @@ class InfrastructureContractTests(unittest.TestCase):
 
         self.assertEqual("AWS_IAM", gateway["AuthorizerType"])
         self.assertEqual("MCP", gateway["ProtocolType"])
-        self.assertEqual("LOG_ONLY", gateway["PolicyEngineConfiguration"]["Mode"])
+        self.assertEqual("LOG_ONLY", self.template["Parameters"]["PolicyEngineMode"]["Default"])
+        self.assertEqual({"Ref": "PolicyEngineMode"}, gateway["PolicyEngineConfiguration"]["Mode"])
 
     def test_policy_waits_for_gateway_tool_schema(self) -> None:
-        policy = self.template["Resources"]["BrokerPolicy"]
+        policies = [
+            resource
+            for resource in self.template["Resources"].values()
+            if resource["Type"] == "AWS::BedrockAgentCore::Policy"
+        ]
 
-        self.assertEqual("BrokerToolTarget", policy["DependsOn"])
+        self.assertEqual(3, len(policies))
+        self.assertTrue(all(policy["DependsOn"] == "BrokerToolTarget" for policy in policies))
 
     def test_gateway_role_permissions_are_resource_scoped(self) -> None:
         policies = self.template["Resources"]["GatewayExecutionRole"]["Properties"]["Policies"]
@@ -38,6 +44,20 @@ class InfrastructureContractTests(unittest.TestCase):
         self.assertEqual("AWS::Logs::DeliverySource", resources["GatewayLogSource"]["Type"])
         self.assertEqual("AWS::Logs::DeliveryDestination", resources["GatewayLogDestination"]["Type"])
         self.assertEqual("AWS::Logs::Delivery", resources["GatewayLogDelivery"]["Type"])
+
+    def test_stack_declares_target_and_ledger_boundaries(self) -> None:
+        resources = self.template["Resources"]
+
+        self.assertEqual("AWS::Lambda::Function", resources["ToolLambda"]["Type"])
+        self.assertEqual("AWS::DynamoDB::Table", resources["ExecutionLedger"]["Type"])
+        self.assertEqual(
+            {"Fn::GetAtt": ["ToolLambda", "Arn"]},
+            resources["BrokerToolTarget"]["Properties"]["TargetConfiguration"]["Mcp"]["Lambda"]["LambdaArn"],
+        )
+        self.assertEqual(
+            [{"CredentialProviderType": "GATEWAY_IAM_ROLE"}],
+            resources["BrokerToolTarget"]["Properties"]["CredentialProviderConfigurations"],
+        )
 
 
 if __name__ == "__main__":
