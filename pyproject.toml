@@ -1,0 +1,11 @@
+[project]
+name = "agentcore-broker-safety-lab"
+version = "0.1.0"
+description = "Contracts and safety evidence for a policy-controlled AgentCore broker."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [
+  { name = "Santosh Hanumaiah Ranganatha" },
+]
+dependencies = []

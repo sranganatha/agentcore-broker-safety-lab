@@ -1,0 +1,18 @@
+[
+  {
+    "runbook_id": "rb-claims-high-error-rate-v1",
+    "service_id": "claims-api",
+    "alarm_code": "HIGH_ERROR_RATE",
+    "allowed_action": "restart_worker_pool",
+    "procedure": "Inspect the claims-api demo health record. If HIGH_ERROR_RATE is active and no database alarm is present, request approval to restart the worker pool. Never modify storage.",
+    "source_digest": "80f9d7d3a57444182abbe60ce2395ec3de6ca5df7c97a930ab6180d5e2fd6934"
+  },
+  {
+    "runbook_id": "rb-claims-database-alarm-v1",
+    "service_id": "claims-api",
+    "alarm_code": "DATABASE_CORRUPTION",
+    "allowed_action": "escalate_only",
+    "procedure": "Do not execute remediation for DATABASE_CORRUPTION. Preserve the synthetic state and escalate the incident for manual investigation.",
+    "source_digest": "16dddfb8957e86dc4fcefc4511c778e0166c1b6a9a2b2f6a96cf0657b190b70e"
+  }
+]
