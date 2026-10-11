@@ -1,0 +1,28 @@
+[
+  {
+    "case_id": "allowed-worker-restart",
+    "task": {
+      "task_id": "task-allowed-001",
+      "service_id": "claims-api",
+      "environment": "demo",
+      "alarm_code": "HIGH_ERROR_RATE",
+      "requested_outcome": "Restore healthy request processing",
+      "correlation_id": "corr-allowed-001"
+    },
+    "expected_runbook": "rb-claims-high-error-rate-v1",
+    "expected_action": "restart_worker_pool"
+  },
+  {
+    "case_id": "database-alarm-escalation",
+    "task": {
+      "task_id": "task-denied-001",
+      "service_id": "claims-api",
+      "environment": "demo",
+      "alarm_code": "DATABASE_CORRUPTION",
+      "requested_outcome": "Protect data and escalate for investigation",
+      "correlation_id": "corr-denied-001"
+    },
+    "expected_runbook": "rb-claims-database-alarm-v1",
+    "expected_action": "escalate_only"
+  }
+]

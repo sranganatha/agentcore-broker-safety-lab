@@ -1,0 +1,77 @@
+[
+  {
+    "name": "get_runbook_procedure",
+    "description": "Return the applicable synthetic procedure for one service alarm.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "service_id": {"type": "string"},
+        "alarm_code": {"type": "string"}
+      },
+      "required": ["service_id", "alarm_code"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "runbook_id": {"type": "string"},
+        "procedure": {"type": "string"},
+        "allowed_action": {"type": "string"},
+        "source_digest": {"type": "string"}
+      },
+      "required": ["runbook_id", "procedure", "allowed_action", "source_digest"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "inspect_service",
+    "description": "Return deterministic synthetic health and alarm state for one service.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "service_id": {"type": "string"},
+        "environment": {"type": "string"}
+      },
+      "required": ["service_id", "environment"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "service_id": {"type": "string"},
+        "environment": {"type": "string"},
+        "health": {"type": "string"},
+        "active_alarm": {"type": "string"}
+      },
+      "required": ["service_id", "environment", "health", "active_alarm"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "execute_remediation",
+    "description": "Execute one approved synthetic remediation with a stable idempotency key.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "task_id": {"type": "string"},
+        "service_id": {"type": "string"},
+        "environment": {"type": "string"},
+        "action": {"type": "string"},
+        "idempotency_key": {"type": "string"}
+      },
+      "required": ["task_id", "service_id", "environment", "action", "idempotency_key"],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "status": {"type": "string"},
+        "approval_request_id": {"type": "string"},
+        "execution_id": {"type": "string"},
+        "effect_count": {"type": "integer"}
+      },
+      "required": ["status"],
+      "additionalProperties": false
+    }
+  }
+]
