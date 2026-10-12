@@ -5,4 +5,8 @@ __pycache__/
 .venv/
 .local/
 .env
-artifacts/
+artifacts/*
+!artifacts/offline-report.json
+!artifacts/offline-report.md
+!artifacts/aws-release-evidence.json
+!artifacts/aws-release-evidence.md

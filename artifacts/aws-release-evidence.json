@@ -1,0 +1,69 @@
+{
+  "application_commit": "7d77615",
+  "cases": {
+    "approval_and_reconciliation": {
+      "approved_action_commits_once": true,
+      "changed_arguments_are_denied": true,
+      "consumed_approval_cannot_be_reused": true,
+      "lost_response_reconciles_once": true,
+      "operator_approval_is_exact": true,
+      "replay_returns_same_receipt": true,
+      "retry_after_reconciliation_returns_same_receipt": true,
+      "task_correlation_is_present": true,
+      "unapproved_request_requires_approval": true
+    },
+    "gateway_enforce": {
+      "allowed_reads_reach_target": true,
+      "disallowed_action_does_not_reach_target": true,
+      "expected_tool_surface_matches": true,
+      "fabricated_tool_does_not_reach_target": true
+    },
+    "gateway_log_only": {
+      "allowed_reads_reach_target": true,
+      "expected_tool_surface_matches": true,
+      "state_change_reaches_target_validation": true
+    },
+    "runtime": {
+      "approval_remains_required": true,
+      "evidence_precedes_proposal": true,
+      "nova_micro_is_used": true,
+      "read_tools_are_called_once": true,
+      "remediation_is_not_dispatched": true,
+      "runtime_completes": true
+    }
+  },
+  "execution_mode": "AWS",
+  "measurements": {
+    "estimated_cost_usd": "unknown",
+    "model_invocations": 3,
+    "policy_latency_ms": "unknown",
+    "token_usage": "unknown",
+    "total_elapsed_seconds": "not recorded"
+  },
+  "model": "amazon.nova-micro-v1:0",
+  "passed": true,
+  "policy_modes": [
+    "LOG_ONLY",
+    "ENFORCE"
+  ],
+  "region": "us-east-1",
+  "resource_identifiers": "redacted",
+  "resource_types": [
+    "AWS::BedrockAgentCore::Gateway",
+    "AWS::BedrockAgentCore::GatewayTarget",
+    "AWS::BedrockAgentCore::PolicyEngine",
+    "AWS::BedrockAgentCore::Policy",
+    "AWS::BedrockAgentCore::Runtime",
+    "AWS::Lambda::Function",
+    "AWS::DynamoDB::Table",
+    "AWS::Logs::LogGroup"
+  ],
+  "schema_version": 1,
+  "teardown": {
+    "application_stack_absent": true,
+    "bootstrap_stack_absent": true,
+    "temporary_iam_credentials_removed": true
+  },
+  "verification_source": "PR #12 tree represented by squash commit 7d77615",
+  "verified_at": "2026-10-12T16:13:29Z"
+}

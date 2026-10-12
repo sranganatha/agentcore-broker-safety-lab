@@ -1,0 +1,23 @@
+{
+  "cases": {
+    "approved_action_commits_once": true,
+    "changed_arguments_are_denied": true,
+    "consumed_approval_is_denied": true,
+    "fixture_model_does_not_write": true,
+    "fixture_model_proposes_allowed_action": true,
+    "lost_response_is_uncertain": true,
+    "offline_policy_corpus_matches": true,
+    "operator_approval_is_exact": true,
+    "reconciliation_returns_one_effect": true,
+    "replay_returns_same_receipt": true,
+    "retry_after_reconciliation_returns_same_receipt": true,
+    "unapproved_action_requires_approval": true
+  },
+  "cloud_calls": 0,
+  "execution_mode": "FIXTURE",
+  "model": "deterministic-fixture",
+  "network_required": false,
+  "passed": true,
+  "policy_case_count": 15,
+  "schema_version": 1
+}
