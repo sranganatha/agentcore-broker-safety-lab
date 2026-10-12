@@ -20,7 +20,7 @@ Synthetic service alarm
     -> reconciliation after an uncertain outcome
 ```
 
-The implemented AWS boundary uses one AgentCore Gateway, one policy engine, and one Lambda target exposing three tools:
+The implemented AWS boundary uses one AgentCore Runtime with Nova Micro, one AgentCore Gateway, one policy engine, and one Lambda target exposing three tools:
 
 | Tool | Risk | Purpose |
 |---|---:|---|
@@ -49,9 +49,13 @@ The repository provides the deployable policy and execution boundary for that wo
 - Boundary and fixture tests that run without a cloud account
 - Signed MCP verification in policy shadow and enforcement modes
 - Bounded CloudFormation deployment and teardown through Make and Podman
+- Direct-code AgentCore Runtime packaging with pinned Linux ARM64 dependencies
+- Deterministic read-before-reasoning workflow with strict task, evidence, and proposal validation
+- Nova Micro proposal generation bounded to one turn, 512 output tokens, 2,048 total tokens, and a cooperative 25-second deadline
+- A runtime execution role limited to the exact Gateway, Nova Micro, its deployment artifact, and runtime logs
 - A Podman-only validation path with no host Python packages
 
-The offline authorization cases are a reference contract, not a Cedar runtime emulator. The AWS verifier exercises the deployed Gateway and Lambda boundary directly; it does not invoke a model. Verification reports contain redacted account metadata and bounded pass/fail evidence under the ignored `artifacts/` directory.
+The offline authorization cases are a reference contract, not a Cedar runtime emulator. The Gateway verifier exercises the deployed Gateway and Lambda boundary directly. The separate Runtime verifier invokes Nova Micro and proves that both reads reached the target once, evidence was returned before a proposal, approval remained required, and remediation was not dispatched. Verification reports contain redacted account metadata and bounded pass/fail evidence under the ignored `artifacts/` directory.
 
 ## Security properties
 
@@ -92,6 +96,7 @@ make deploy-aws CONFIRM_DEPLOY=agentcore-broker-safety-lab
 make verify-aws
 make policy-enforce CONFIRM_POLICY_ENFORCE=agentcore-broker-safety-lab
 make verify-aws-enforce
+make verify-runtime-aws
 make destroy-aws CONFIRM_DESTROY=agentcore-broker-safety-lab
 ```
 
@@ -102,3 +107,4 @@ The commands create only the named application and bootstrap stacks in `us-east-
 - [MVP specification](docs/mvp-spec.md)
 - [Workload identity boundary](docs/adr/0001-workload-identity-boundary.md)
 - [Policy and target enforcement](docs/adr/0002-policy-and-target-enforcement.md)
+- [Direct-code AgentCore Runtime](docs/adr/0003-direct-code-runtime.md)

@@ -59,6 +59,27 @@ class InfrastructureContractTests(unittest.TestCase):
             resources["BrokerToolTarget"]["Properties"]["CredentialProviderConfigurations"],
         )
 
+    def test_runtime_is_direct_code_and_proposal_only(self) -> None:
+        resources = self.template["Resources"]
+        runtime = resources["BrokerRuntime"]["Properties"]
+
+        self.assertEqual("PYTHON_3_12", runtime["AgentRuntimeArtifact"]["CodeConfiguration"]["Runtime"])
+        self.assertEqual("HTTP", runtime["ProtocolConfiguration"])
+        self.assertEqual({"NetworkMode": "PUBLIC"}, runtime["NetworkConfiguration"])
+
+        policies = resources["BrokerRuntimeRole"]["Properties"]["Policies"]
+        actions = {
+            action
+            for policy in policies
+            for statement in policy["PolicyDocument"]["Statement"]
+            for action in ([statement["Action"]] if isinstance(statement["Action"], str) else statement["Action"])
+        }
+        self.assertIn("bedrock-agentcore:InvokeGateway", actions)
+        self.assertNotIn("dynamodb:PutItem", actions)
+        self.assertNotIn("dynamodb:UpdateItem", actions)
+        self.assertNotIn("lambda:InvokeFunction", actions)
+        self.assertNotIn("bedrock-agentcore:CreateWorkloadIdentity", actions)
+
 
 if __name__ == "__main__":
     unittest.main()
