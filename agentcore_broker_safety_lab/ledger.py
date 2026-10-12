@@ -253,13 +253,19 @@ def _read_receipt(item: Mapping[str, Any] | None) -> ExecutionReceipt | None:
         return None
     try:
         reconciled_at = item.get("reconciled_at")
+        effect_count = item["effect_count"]
+        if type(effect_count) is not int:
+            normalized_effect_count = int(effect_count)
+            if isinstance(effect_count, bool) or normalized_effect_count != effect_count:
+                raise ValueError("effect_count is not an integer")
+            effect_count = normalized_effect_count
         return ExecutionReceipt(
             execution_id=item["execution_id"],
             idempotency_key=item["idempotency_key"],
             task_id=item["task_id"],
             action_digest=item["action_digest"],
             status=ExecutionStatus.COMMITTED,
-            effect_count=item["effect_count"],
+            effect_count=effect_count,
             provider_operation_id=item["provider_operation_id"],
             created_at=_datetime(item["created_at"]),
             reconciled_at=_datetime(reconciled_at) if reconciled_at else None,

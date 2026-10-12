@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any
 
 from .contracts import ContractError
@@ -30,20 +31,31 @@ def _target() -> BrokerToolTarget:
 def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """Dispatch one validated Gateway invocation without logging raw arguments."""
     tool_name = "unknown"
+    task_id = _task_id(event)
     try:
         tool_name = _tool_name(context)
         result = _target().handle(event, context)
-        _log("tool_dispatch", tool_name, "SUCCESS")
+        _log("tool_dispatch", task_id, tool_name, "SUCCESS")
         return result
     except ContractError as exc:
-        _log("tool_dispatch", tool_name, exc.code.value)
+        _log("tool_dispatch", task_id, tool_name, exc.code.value)
         raise RuntimeError(exc.code.value) from exc
 
 
-def _log(event_type: str, tool_name: str, outcome: str) -> None:
+def _task_id(event: Any) -> str:
+    value = event.get("task_id") if isinstance(event, dict) else None
+    return value if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9._-]{1,128}", value) else "unknown"
+
+
+def _log(event_type: str, task_id: str, tool_name: str, outcome: str) -> None:
     print(
         json.dumps(
-            {"event_type": event_type, "tool_name": tool_name, "outcome": outcome},
+            {
+                "event_type": event_type,
+                "task_id": task_id,
+                "tool_name": tool_name,
+                "outcome": outcome,
+            },
             sort_keys=True,
             separators=(",", ":"),
         )

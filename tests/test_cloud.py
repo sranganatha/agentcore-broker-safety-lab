@@ -30,7 +30,13 @@ if "boto3" not in sys.modules:
         }
     )
 
-from scripts.cloud import McpClient, _redact_text
+from scripts.cloud import (
+    McpClient,
+    _approval_markdown,
+    _assume_role_session,
+    _redact_text,
+    _tool_content,
+)
 
 
 class StubMcpClient(McpClient):
@@ -68,6 +74,44 @@ class McpClientTests(unittest.TestCase):
 
         with self.assertRaisesRegex(RuntimeError, "rejected MCP initialization"):
             client.initialize()
+
+    def test_tool_content_accepts_structured_and_text_results(self) -> None:
+        self.assertEqual(
+            {"status": "COMMITTED"},
+            _tool_content({"result": {"structuredContent": {"status": "COMMITTED"}}}),
+        )
+        self.assertEqual(
+            {"status": "APPROVAL_REQUIRED"},
+            _tool_content(
+                {
+                    "result": {
+                        "content": [{"text": '{"status":"APPROVAL_REQUIRED"}'}]
+                    }
+                }
+            ),
+        )
+
+    def test_approval_markdown_contains_only_normalized_results(self) -> None:
+        report = {
+            "execution_mode": "AWS_APPROVAL_RECONCILIATION",
+            "region": "us-east-1",
+            "account": "********9012",
+            "policy_engine_mode": "ENFORCE",
+            "passed": True,
+            "cases": {"approved_action_commits_once": True},
+        }
+
+        markdown = _approval_markdown(report)
+
+        self.assertIn("| approved_action_commits_once | PASS |", markdown)
+        self.assertNotIn("task_id", markdown)
+
+    def test_operator_role_rejects_root_credentials(self) -> None:
+        sts = type("Sts", (), {"get_caller_identity": lambda self: {"Arn": "arn:aws:iam::123456789012:root"}})()
+        session = type("Session", (), {"client": lambda self, service: sts})()
+
+        with self.assertRaisesRegex(SystemExit, "root credentials are not supported"):
+            _assume_role_session(session, "arn:aws:iam::123456789012:role/operator")
 
 
 if __name__ == "__main__":

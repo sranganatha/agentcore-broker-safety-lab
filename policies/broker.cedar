@@ -4,6 +4,8 @@ permit (
     resource == AgentCore::Gateway::"${GatewayArn}"
 )
 when {
+    (principal.id == "${RuntimePrincipal}" ||
+     principal.id == "${OperatorPrincipal}") &&
     context.input.service_id == "claims-api" &&
     (context.input.alarm_code == "HIGH_ERROR_RATE" ||
      context.input.alarm_code == "DATABASE_CORRUPTION")
@@ -15,6 +17,8 @@ permit (
     resource == AgentCore::Gateway::"${GatewayArn}"
 )
 when {
+    (principal.id == "${RuntimePrincipal}" ||
+     principal.id == "${OperatorPrincipal}") &&
     context.input.service_id == "claims-api" &&
     context.input.environment == "demo"
 };
@@ -25,6 +29,7 @@ permit (
     resource == AgentCore::Gateway::"${GatewayArn}"
 )
 when {
+    principal.id == "${OperatorPrincipal}" &&
     context.input.service_id == "claims-api" &&
     context.input.environment == "demo" &&
     context.input.action == "restart_worker_pool"

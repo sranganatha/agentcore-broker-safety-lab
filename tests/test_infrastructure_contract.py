@@ -80,6 +80,35 @@ class InfrastructureContractTests(unittest.TestCase):
         self.assertNotIn("lambda:InvokeFunction", actions)
         self.assertNotIn("bedrock-agentcore:CreateWorkloadIdentity", actions)
 
+    def test_operator_role_is_narrow_and_separate_from_runtime(self) -> None:
+        resources = self.template["Resources"]
+        policies = resources["BrokerOperatorRole"]["Properties"]["Policies"]
+        actions = {
+            action
+            for policy in policies
+            for statement in policy["PolicyDocument"]["Statement"]
+            for action in ([statement["Action"]] if isinstance(statement["Action"], str) else statement["Action"])
+        }
+
+        self.assertEqual(
+            {"bedrock-agentcore:InvokeGateway", "dynamodb:GetItem", "dynamodb:UpdateItem"},
+            actions,
+        )
+        self.assertNotIn("dynamodb:PutItem", actions)
+        self.assertNotIn("bedrock-agentcore:CreatePolicy", actions)
+        self.assertNotIn("lambda:InvokeFunction", actions)
+
+        statements = [
+            resource["Properties"]["Definition"]["Cedar"]["Statement"]["Fn::Sub"][0]
+            for resource in resources.values()
+            if resource["Type"] == "AWS::BedrockAgentCore::Policy"
+        ]
+        remediation = next(
+            statement for statement in statements if "execute_remediation" in statement
+        )
+        self.assertIn('${OperatorPrincipal}', remediation)
+        self.assertNotIn('${RuntimePrincipal}', remediation)
+
 
 if __name__ == "__main__":
     unittest.main()

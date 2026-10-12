@@ -38,6 +38,7 @@ The repository provides the deployable policy and execution boundary for that wo
 - AgentCore-compatible JSON tool definitions
 - Exact Gateway-visible MCP action names and argument schemas
 - Explicit Cedar policy for the one synthetic service and remediation class
+- Principal-scoped Cedar policy that gives Runtime only the two read tools and reserves remediation for a separate operator role
 - Frozen offline authorization cases across IAM, schema, and policy denial layers
 - Reviewable CloudFormation for the IAM-authenticated Gateway, Lambda target, policy engine, scoped execution role, and log delivery
 - Policy engine attachment in observation-only `LOG_ONLY` mode
@@ -53,6 +54,8 @@ The repository provides the deployable policy and execution boundary for that wo
 - Deterministic read-before-reasoning workflow with strict task, evidence, and proposal validation
 - Nova Micro proposal generation bounded to one turn, 512 output tokens, 2,048 total tokens, and a cooperative 25-second deadline
 - A runtime execution role limited to the exact Gateway, Nova Micro, its deployment artifact, and runtime logs
+- A trusted operator role limited to the exact Gateway plus approval and reconciliation updates in the one ledger table
+- Bounded AWS approval verification covering changed arguments, replay, simulated response loss, and reconciliation
 - A Podman-only validation path with no host Python packages
 
 The offline authorization cases are a reference contract, not a Cedar runtime emulator. The Gateway verifier exercises the deployed Gateway and Lambda boundary directly. The separate Runtime verifier invokes Nova Micro and proves that both reads reached the target once, evidence was returned before a proposal, approval remained required, and remediation was not dispatched. Verification reports contain redacted account metadata and bounded pass/fail evidence under the ignored `artifacts/` directory.
@@ -65,6 +68,7 @@ The offline authorization cases are a reference contract, not a Cedar runtime em
 - Receipt states enforce their required effect count and provider-operation fields.
 - Tool schemas expose only the three named lab capabilities.
 - Gateway policy permits only the `claims-api` demo reads and `restart_worker_pool` remediation class.
+- Runtime receives exactly the two read tools; only the separate operator identity can reach remediation.
 - Unknown actions, wrong principal types, missing invoke permission, extra fields, and malformed argument types have frozen deny cases.
 - Repeated and concurrent idempotency keys resolve to one committed synthetic effect.
 - An uncertain post-commit result is reconciled before another execution attempt.
@@ -89,7 +93,7 @@ The tooling image validates source compilation, contract drift, and CloudFormati
 
 ## AWS validation
 
-An authenticated AWS session, Make, and a running Podman machine are required. The deployment starts with policy evaluation in `LOG_ONLY`, verifies the live MCP boundary, then requires an explicit promotion before enforcement verification.
+An authenticated non-root IAM or IAM Identity Center session, Make, and a running Podman machine are required. The deployment starts with policy evaluation in `LOG_ONLY`, verifies the live MCP boundary, then requires an explicit promotion before enforcement verification.
 
 ```bash
 make deploy-aws CONFIRM_DEPLOY=agentcore-broker-safety-lab
@@ -97,10 +101,19 @@ make verify-aws
 make policy-enforce CONFIRM_POLICY_ENFORCE=agentcore-broker-safety-lab
 make verify-aws-enforce
 make verify-runtime-aws
+make verify-approval-aws
 make destroy-aws CONFIRM_DESTROY=agentcore-broker-safety-lab
 ```
 
+To approve one pending request outside the agent path, provide the exact identifiers returned by the remediation request:
+
+```bash
+make approve-aws TASK_ID=<task-id> APPROVAL_REQUEST_ID=<approval-request-id> CONFIRM_APPROVE=agentcore-broker-safety-lab
+```
+
 The commands create only the named application and bootstrap stacks in `us-east-1` by default. Override `AWS_REGION`, `APPLICATION_STACK`, or `BOOTSTRAP_STACK` when needed; stack names must retain the `agentcore-broker-safety-lab` prefix. Teardown removes the application stack, its exact artifact prefix, and the bootstrap stack.
+
+If the non-root credentials are stored under a named profile, add `AWS_PROFILE=<profile>` to each AWS Make command. The profile is forwarded into the tooling container while the AWS configuration remains mounted read-only.
 
 ## Design references
 

@@ -122,6 +122,7 @@ def validate_gateway_contract() -> None:
         required = {
             "case_id",
             "principal_type",
+            "principal_role",
             "iam_permissions",
             "action",
             "arguments",

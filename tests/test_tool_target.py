@@ -37,12 +37,12 @@ class BrokerToolTargetTests(unittest.TestCase):
 
     def test_read_tools_return_exact_synthetic_evidence(self) -> None:
         service = self.target.handle(
-            {"service_id": "claims-api", "environment": "demo"},
+            {"task_id": "task-001", "service_id": "claims-api", "environment": "demo"},
             context("inspect_service"),
             now=self.now,
         )
         runbook = self.target.handle(
-            {"service_id": "claims-api", "alarm_code": "HIGH_ERROR_RATE"},
+            {"task_id": "task-001", "service_id": "claims-api", "alarm_code": "HIGH_ERROR_RATE"},
             context("get_runbook_procedure"),
             now=self.now,
         )
@@ -62,7 +62,12 @@ class BrokerToolTargetTests(unittest.TestCase):
 
         with self.assertRaises(ContractError) as caught:
             self.target.handle(
-                {"service_id": "claims-api", "environment": "demo", "extra": True},
+                {
+                    "task_id": "task-001",
+                    "service_id": "claims-api",
+                    "environment": "demo",
+                    "extra": True,
+                },
                 context("inspect_service"),
                 now=self.now,
             )
@@ -70,7 +75,7 @@ class BrokerToolTargetTests(unittest.TestCase):
 
         with self.assertRaises(ContractError) as oversized:
             self.target.handle(
-                {"service_id": "x" * 129, "environment": "demo"},
+                {"task_id": "task-001", "service_id": "x" * 129, "environment": "demo"},
                 context("inspect_service"),
                 now=self.now,
             )

@@ -21,6 +21,11 @@ from botocore.awsrequest import AWSRequest
 from botocore.config import Config
 from botocore.exceptions import ClientError, WaiterError
 
+from agentcore_broker_safety_lab.canonical import action_digest
+from agentcore_broker_safety_lab.contracts import ContractError, ErrorCode
+from agentcore_broker_safety_lab.ledger import DynamoDbLedger
+from agentcore_broker_safety_lab.tool_target import BrokerToolTarget, EXECUTE_TOOL
+
 
 ROOT = Path(__file__).resolve().parent.parent
 ARTIFACTS = ROOT / "artifacts"
@@ -78,6 +83,23 @@ def _stack(client: Any, name: str) -> dict[str, Any] | None:
 
 def _outputs(stack: dict[str, Any]) -> dict[str, str]:
     return {item["OutputKey"]: item["OutputValue"] for item in stack.get("Outputs", [])}
+
+
+def _assume_role_session(session: boto3.Session, role_arn: str) -> boto3.Session:
+    sts = session.client("sts")
+    if sts.get_caller_identity().get("Arn", "").endswith(":root"):
+        raise SystemExit("AWS root credentials are not supported; use an IAM or IAM Identity Center principal")
+    credentials = sts.assume_role(
+        RoleArn=role_arn,
+        RoleSessionName="agentcore-broker-verification",
+        DurationSeconds=900,
+    )["Credentials"]
+    return boto3.Session(
+        aws_access_key_id=credentials["AccessKeyId"],
+        aws_secret_access_key=credentials["SecretAccessKey"],
+        aws_session_token=credentials["SessionToken"],
+        region_name=session.region_name,
+    )
 
 
 def _deploy_stack(
@@ -333,6 +355,26 @@ def _is_error(response: dict[str, Any]) -> bool:
     return bool(isinstance(result, dict) and result.get("isError"))
 
 
+def _tool_content(response: dict[str, Any]) -> dict[str, Any]:
+    if _is_error(response):
+        raise RuntimeError("Gateway tool call failed")
+    result = response.get("result")
+    if not isinstance(result, dict):
+        raise RuntimeError("Gateway tool response is missing")
+    structured = result.get("structuredContent")
+    if isinstance(structured, dict):
+        return structured
+    blocks = result.get("content")
+    text = blocks[0].get("text") if isinstance(blocks, list) and blocks and isinstance(blocks[0], dict) else None
+    try:
+        value = json.loads(text)
+    except (json.JSONDecodeError, TypeError) as exc:
+        raise RuntimeError("Gateway tool response is invalid") from exc
+    if not isinstance(value, dict):
+        raise RuntimeError("Gateway tool response is invalid")
+    return value
+
+
 def _tool_names(response: dict[str, Any]) -> list[str]:
     result = response.get("result", {})
     tools = result.get("tools", []) if isinstance(result, dict) else []
@@ -355,6 +397,38 @@ def _dispatch_events(logs: Any, log_group: str, start_ms: int) -> list[dict[str,
     return records
 
 
+def _gateway_task_counts(
+    logs: Any, log_group: str, start_ms: int, task_ids: set[str]
+) -> dict[str, int]:
+    events = logs.filter_log_events(logGroupName=log_group, startTime=start_ms).get("events", [])
+    return {
+        task_id: sum(task_id in str(event.get("message", "")) for event in events)
+        for task_id in sorted(task_ids)
+    }
+
+
+def _invoke_runtime(
+    session: boto3.Session, outputs: dict[str, str], payload: dict[str, str]
+) -> dict[str, Any]:
+    client = session.client(
+        "bedrock-agentcore",
+        config=Config(connect_timeout=10, read_timeout=60, retries={"max_attempts": 1}),
+    )
+    response = client.invoke_agent_runtime(
+        agentRuntimeArn=outputs["RuntimeArn"],
+        qualifier="DEFAULT",
+        runtimeSessionId=f"verify-{uuid.uuid4().hex}",
+        payload=json.dumps(payload, separators=(",", ":")).encode("utf-8"),
+    )
+    raw = response["response"].read(65_537)
+    if len(raw) > 65_536:
+        raise RuntimeError("runtime response exceeded verification limit")
+    result = json.loads(raw)
+    if not isinstance(result, dict):
+        raise RuntimeError("runtime response must be an object")
+    return result
+
+
 def verify(mode: str) -> None:
     session, region, application_stack, bootstrap_stack = _settings()
     account = _identity(session, region, application_stack, bootstrap_stack)
@@ -367,9 +441,11 @@ def verify(mode: str) -> None:
         raise SystemExit(f"stack policy mode is {outputs['PolicyEngineMode']}, expected {mode}")
 
     started_ms = int(time.time() * 1000)
-    client = McpClient(session, region, outputs["GatewayUrl"])
+    operator_session = _assume_role_session(session, outputs["OperatorRoleArn"])
+    client = McpClient(operator_session, region, outputs["GatewayUrl"])
     client.initialize()
     listed = client.tools()
+    task_id = f"verify-{mode.lower()}-{uuid.uuid4().hex[:8]}"
     expected_tools = sorted(
         [
             "BrokerTools___execute_remediation",
@@ -379,25 +455,29 @@ def verify(mode: str) -> None:
     )
     runbook = client.call(
         "BrokerTools___get_runbook_procedure",
-        {"service_id": "claims-api", "alarm_code": "HIGH_ERROR_RATE"},
+        {"task_id": task_id, "service_id": "claims-api", "alarm_code": "HIGH_ERROR_RATE"},
     )
     inspection = client.call(
         "BrokerTools___inspect_service",
-        {"service_id": "claims-api", "environment": "demo"},
+        {"task_id": task_id, "service_id": "claims-api", "environment": "demo"},
     )
     unknown = client.call("BrokerTools___delete_database", {})
     disallowed = client.call(
         "BrokerTools___execute_remediation",
         {
-            "task_id": f"verify-{mode.lower()}",
+            "task_id": task_id,
             "service_id": "claims-api",
             "environment": "demo",
             "action": "delete_database",
-            "idempotency_key": f"verify-{mode.lower()}-unsafe",
+            "idempotency_key": f"{task_id}-unsafe",
         },
     )
     time.sleep(10)
-    dispatches = _dispatch_events(session.client("logs"), outputs["ToolLambdaLogGroupName"], started_ms)
+    dispatches = [
+        record
+        for record in _dispatch_events(session.client("logs"), outputs["ToolLambdaLogGroupName"], started_ms)
+        if record.get("task_id") == task_id
+    ]
     counts: dict[str, int] = {}
     for record in dispatches:
         tool = str(record.get("tool_name", "unknown"))
@@ -426,6 +506,7 @@ def verify(mode: str) -> None:
         "policy_engine_mode": mode,
         "mcp_version": MCP_VERSION,
         "gateway_id": outputs["GatewayIdentifier"],
+        "task_id": task_id,
         "expected_tools": expected_tools,
         "actual_tools": _tool_names(listed),
         "dispatch_counts": counts,
@@ -458,26 +539,14 @@ def verify_runtime() -> None:
         "alarm_code": "HIGH_ERROR_RATE",
         "environment": "demo",
     }
-    client = session.client(
-        "bedrock-agentcore",
-        config=Config(connect_timeout=10, read_timeout=60, retries={"max_attempts": 1}),
-    )
-    response = client.invoke_agent_runtime(
-        agentRuntimeArn=outputs["RuntimeArn"],
-        qualifier="DEFAULT",
-        runtimeSessionId=f"verify-{uuid.uuid4().hex}",
-        payload=json.dumps(payload, separators=(",", ":")).encode("utf-8"),
-    )
-    raw = response["response"].read(65_537)
-    if len(raw) > 65_536:
-        raise RuntimeError("runtime response exceeded verification limit")
-    result = json.loads(raw)
+    result = _invoke_runtime(session, outputs, payload)
 
     dispatches: list[dict[str, Any]] = []
     for _ in range(6):
         dispatches = _dispatch_events(
             session.client("logs"), outputs["ToolLambdaLogGroupName"], started_ms
         )
+        dispatches = [record for record in dispatches if record.get("task_id") == payload["task_id"]]
         if len(dispatches) >= 2:
             break
         time.sleep(5)
@@ -493,6 +562,7 @@ def verify_runtime() -> None:
         "runbook_read_once": counts.get("get_runbook_procedure") == 1,
         "service_read_once": counts.get("inspect_service") == 1,
         "no_remediation_dispatch": counts.get("execute_remediation", 0) == 0,
+        "runtime_received_read_only_surface": result.get("outcome") == "COMPLETED",
         "evidence_precedes_proposal": bool(evidence.get("runbook_id"))
         and evidence.get("active_alarm") == payload["alarm_code"],
         "approval_required": proposal.get("requires_approval") is True,
@@ -503,6 +573,7 @@ def verify_runtime() -> None:
         "execution_mode": "AWS_RUNTIME",
         "model": MODEL_ID,
         "runtime_arn": _redact_text(outputs["RuntimeArn"]),
+        "task_id": payload["task_id"],
         "dispatch_counts": counts,
         "outcome": result.get("outcome"),
         "cases": cases,
@@ -515,6 +586,195 @@ def verify_runtime() -> None:
     print(f"passed={str(report['passed']).lower()}")
     if not report["passed"]:
         raise SystemExit("AWS runtime verification failed")
+
+
+def approve(task_id: str, approval_request_id: str) -> None:
+    _confirm("CONFIRM_APPROVE")
+    session, region, application_stack, bootstrap_stack = _settings()
+    _identity(session, region, application_stack, bootstrap_stack)
+    stack = _stack(session.client("cloudformation"), application_stack)
+    if stack is None:
+        raise SystemExit("application stack does not exist")
+    outputs = _outputs(stack)
+    operator_session = _assume_role_session(session, outputs["OperatorRoleArn"])
+    target = BrokerToolTarget(
+        DynamoDbLedger(operator_session.resource("dynamodb").Table(outputs["ExecutionLedgerName"]))
+    )
+    approved = target.approve(task_id, approval_request_id)
+    print(f"task_id={approved.task_id}")
+    print(f"approval_request_id={approved.approval_request_id}")
+    print(f"status={approved.status.value}")
+
+
+def _approval_markdown(report: dict[str, Any]) -> str:
+    rows = ["| Case | Result |", "|---|---|"]
+    rows.extend(
+        f"| {name} | {'PASS' if passed else 'FAIL'} |" for name, passed in report["cases"].items()
+    )
+    return "\n".join(
+        [
+            "# AWS approval and reconciliation verification",
+            "",
+            f"- Execution mode: {report['execution_mode']}",
+            f"- Region: {report['region']}",
+            f"- Account: {report['account']}",
+            f"- Policy mode: {report['policy_engine_mode']}",
+            f"- Result: {'PASS' if report['passed'] else 'FAIL'}",
+            "",
+            *rows,
+            "",
+        ]
+    )
+
+
+def verify_approval_flow() -> None:
+    session, region, application_stack, bootstrap_stack = _settings()
+    account = _identity(session, region, application_stack, bootstrap_stack, model=MODEL_ID)
+    stack = _stack(session.client("cloudformation"), application_stack)
+    if stack is None:
+        raise SystemExit("application stack does not exist")
+    outputs = _outputs(stack)
+    if outputs["PolicyEngineMode"] != "ENFORCE":
+        raise SystemExit("approval verification requires ENFORCE policy mode")
+
+    operator_session = _assume_role_session(session, outputs["OperatorRoleArn"])
+    client = McpClient(operator_session, region, outputs["GatewayUrl"])
+    client.initialize()
+    operator_tools = _tool_names(client.tools())
+    target = BrokerToolTarget(
+        DynamoDbLedger(operator_session.resource("dynamodb").Table(outputs["ExecutionLedgerName"]))
+    )
+    started_ms = int(time.time() * 1000)
+
+    task_id = f"approval-{uuid.uuid4().hex[:12]}"
+    runtime_result = _invoke_runtime(
+        session,
+        outputs,
+        {
+            "task_id": task_id,
+            "service_id": "claims-api",
+            "alarm_code": "HIGH_ERROR_RATE",
+            "environment": "demo",
+        },
+    )
+    proposal = runtime_result.get("proposal", {})
+    arguments = {
+        "task_id": task_id,
+        "service_id": "claims-api",
+        "environment": "demo",
+        "action": proposal.get("proposed_action", ""),
+        "idempotency_key": f"{task_id}-effect",
+    }
+    pending = _tool_content(client.call("BrokerTools___execute_remediation", arguments))
+    approval_request_id = str(pending.get("approval_request_id", ""))
+    approved = target.approve(task_id, approval_request_id)
+    changed = client.call(
+        "BrokerTools___execute_remediation",
+        {**arguments, "idempotency_key": f"{task_id}-changed"},
+    )
+    committed = _tool_content(client.call("BrokerTools___execute_remediation", arguments))
+    replay = _tool_content(client.call("BrokerTools___execute_remediation", arguments))
+    try:
+        target.approve(task_id, approval_request_id)
+        reused_approval_code = "UNEXPECTED_SUCCESS"
+    except ContractError as exc:
+        reused_approval_code = exc.code.value
+
+    uncertain_task_id = f"uncertain-{uuid.uuid4().hex[:12]}"
+    uncertain_arguments = {
+        **arguments,
+        "task_id": uncertain_task_id,
+        "idempotency_key": f"{uncertain_task_id}-effect",
+    }
+    uncertain_pending = _tool_content(
+        client.call("BrokerTools___execute_remediation", uncertain_arguments)
+    )
+    target.approve(uncertain_task_id, str(uncertain_pending.get("approval_request_id", "")))
+    client.call("BrokerTools___execute_remediation", uncertain_arguments)
+    reconciled = target.reconcile_execution(uncertain_arguments)
+    retried = _tool_content(client.call("BrokerTools___execute_remediation", uncertain_arguments))
+
+    task_ids = {task_id, uncertain_task_id}
+    logs = session.client("logs")
+    dispatches: list[dict[str, Any]] = []
+    gateway_counts = {value: 0 for value in task_ids}
+    for _ in range(6):
+        dispatches = [
+            record
+            for record in _dispatch_events(logs, outputs["ToolLambdaLogGroupName"], started_ms)
+            if record.get("task_id") in task_ids
+        ]
+        gateway_counts = _gateway_task_counts(
+            logs, outputs["GatewayLogGroupName"], started_ms, task_ids
+        )
+        if {str(record.get("task_id")) for record in dispatches} == task_ids and all(
+            gateway_counts.values()
+        ):
+            break
+        time.sleep(5)
+    dispatched_task_ids = {str(record.get("task_id")) for record in dispatches}
+    cases = {
+        "runtime_proposes_approved_action": runtime_result.get("outcome") == "COMPLETED"
+        and proposal.get("requires_approval") is True
+        and arguments["action"] == "restart_worker_pool",
+        "operator_receives_exact_tool_surface": operator_tools
+        == sorted(
+            [
+                "BrokerTools___execute_remediation",
+                "BrokerTools___get_runbook_procedure",
+                "BrokerTools___inspect_service",
+            ]
+        ),
+        "unapproved_request_requires_approval": pending.get("status") == "APPROVAL_REQUIRED"
+        and bool(approval_request_id),
+        "operator_approval_is_exact": approved.approval_request_id == approval_request_id,
+        "changed_arguments_are_denied": _is_error(changed),
+        "approved_action_commits_once": committed.get("status") == "COMMITTED"
+        and committed.get("effect_count") == 1,
+        "replay_returns_same_receipt": replay == committed,
+        "consumed_approval_cannot_be_reused": reused_approval_code
+        == ErrorCode.APPROVAL_ALREADY_CONSUMED.value,
+        "lost_response_reconciles_once": reconciled.get("status") == "COMMITTED"
+        and reconciled.get("effect_count") == 1,
+        "retry_after_reconciliation_returns_same_receipt": retried == reconciled,
+        "lambda_events_are_task_correlated": dispatched_task_ids == task_ids,
+        "gateway_events_are_task_correlated": all(gateway_counts.values()),
+    }
+    report = {
+        "account": f"********{account[-4:]}",
+        "region": region,
+        "execution_mode": "AWS_APPROVAL_RECONCILIATION",
+        "model": MODEL_ID,
+        "policy_engine_mode": "ENFORCE",
+        "task_ids": sorted(task_ids),
+        "dispatch_counts": {
+            task: sum(1 for record in dispatches if record.get("task_id") == task)
+            for task in sorted(task_ids)
+        },
+        "gateway_event_counts": gateway_counts,
+        "policy_evidence": {
+            "mode": "ENFORCE",
+            "operator_tools": operator_tools,
+            "runtime_tools": sorted(
+                [
+                    "BrokerTools___get_runbook_procedure",
+                    "BrokerTools___inspect_service",
+                ]
+            ),
+        },
+        "cases": cases,
+        "passed": all(cases.values()),
+        "verified_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+    }
+    json_path = ARTIFACTS / "aws-approval-verification.json"
+    markdown_path = ARTIFACTS / "aws-approval-verification.md"
+    json_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    markdown_path.write_text(_approval_markdown(report), encoding="utf-8")
+    print(f"report={json_path.name}")
+    print(f"summary={markdown_path.name}")
+    print(f"passed={str(report['passed']).lower()}")
+    if not report["passed"]:
+        raise SystemExit("AWS approval verification failed")
 
 
 def destroy() -> None:
@@ -564,6 +824,10 @@ def main() -> None:
     mode_parser = subparsers.add_parser("policy-mode")
     mode_parser.add_argument("--mode", choices=["LOG_ONLY", "ENFORCE"], required=True)
     subparsers.add_parser("verify-runtime")
+    approve_parser = subparsers.add_parser("approve")
+    approve_parser.add_argument("--task-id", required=True)
+    approve_parser.add_argument("--approval-request-id", required=True)
+    subparsers.add_parser("verify-approval")
     subparsers.add_parser("destroy")
     arguments = parser.parse_args()
     if arguments.command == "deploy":
@@ -574,6 +838,10 @@ def main() -> None:
         set_policy_mode(arguments.mode)
     elif arguments.command == "verify-runtime":
         verify_runtime()
+    elif arguments.command == "approve":
+        approve(arguments.task_id, arguments.approval_request_id)
+    elif arguments.command == "verify-approval":
+        verify_approval_flow()
     else:
         destroy()
 

@@ -87,7 +87,7 @@ class BrokerToolTarget:
         return self._execute(event, current_time, lose_response_after_commit)
 
     def _get_runbook(self, event: Mapping[str, Any]) -> dict[str, Any]:
-        arguments = _arguments(event, {"service_id", "alarm_code"})
+        arguments = _arguments(event, {"task_id", "service_id", "alarm_code"})
         for runbook in self._runbooks:
             if (
                 runbook["service_id"] == arguments["service_id"]
@@ -102,7 +102,7 @@ class BrokerToolTarget:
         raise ContractError(ErrorCode.INVALID_REQUEST, "no runbook matches the requested service alarm")
 
     def _inspect_service(self, event: Mapping[str, Any]) -> dict[str, Any]:
-        arguments = _arguments(event, {"service_id", "environment"})
+        arguments = _arguments(event, {"task_id", "service_id", "environment"})
         for service in self._services:
             if (
                 service["service_id"] == arguments["service_id"]

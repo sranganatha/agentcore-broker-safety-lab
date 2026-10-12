@@ -1,5 +1,6 @@
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 import unittest
 
 from agentcore_broker_safety_lab.canonical import action_digest, approval_request_id
@@ -49,7 +50,7 @@ class FakeDynamoTable:
                 status="CONSUMED",
                 execution_id=values[":execution_id"],
                 idempotency_key=values[":idempotency_key"],
-                effect_count=values[":effect_count"],
+                effect_count=Decimal(values[":effect_count"]),
                 provider_operation_id=values[":provider_operation_id"],
                 created_at=values[":created_at"],
             )

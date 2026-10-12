@@ -246,10 +246,11 @@
                     "InputSchema": {
                       "Type": "object",
                       "Properties": {
+                        "task_id": {"Type": "string"},
                         "service_id": {"Type": "string"},
                         "alarm_code": {"Type": "string"}
                       },
-                      "Required": ["service_id", "alarm_code"]
+                      "Required": ["task_id", "service_id", "alarm_code"]
                     },
                     "OutputSchema": {
                       "Type": "object",
@@ -268,10 +269,11 @@
                     "InputSchema": {
                       "Type": "object",
                       "Properties": {
+                        "task_id": {"Type": "string"},
                         "service_id": {"Type": "string"},
                         "environment": {"Type": "string"}
                       },
-                      "Required": ["service_id", "environment"]
+                      "Required": ["task_id", "service_id", "environment"]
                     },
                     "OutputSchema": {
                       "Type": "object",
@@ -314,6 +316,48 @@
             }
           }
         }
+      }
+    },
+    "BrokerOperatorRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "Description": "Approves exact pending requests and invokes the bounded broker Gateway.",
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {"Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"}
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "OperateBoundedBroker",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": "bedrock-agentcore:InvokeGateway",
+                  "Resource": {"Fn::GetAtt": ["BrokerGateway", "GatewayArn"]}
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": ["dynamodb:GetItem", "dynamodb:UpdateItem"],
+                  "Resource": {"Fn::GetAtt": ["ExecutionLedger", "Arn"]}
+                }
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {"Key": "Project", "Value": "agentcore-broker-safety-lab"},
+          {"Key": "ManagedBy", "Value": "CloudFormation"}
+        ]
       }
     },
     "BrokerRuntimeRole": {
@@ -434,8 +478,12 @@
           "Cedar": {
             "Statement": {
               "Fn::Sub": [
-                "permit (\n    principal is AgentCore::IamEntity,\n    action == AgentCore::Action::\"BrokerTools___get_runbook_procedure\",\n    resource == AgentCore::Gateway::\"${GatewayArn}\"\n)\nwhen {\n    context.input.service_id == \"claims-api\" &&\n    (context.input.alarm_code == \"HIGH_ERROR_RATE\" ||\n     context.input.alarm_code == \"DATABASE_CORRUPTION\")\n};\n",
-                {"GatewayArn": {"Fn::GetAtt": ["BrokerGateway", "GatewayArn"]}}
+                "permit (\n    principal is AgentCore::IamEntity,\n    action == AgentCore::Action::\"BrokerTools___get_runbook_procedure\",\n    resource == AgentCore::Gateway::\"${GatewayArn}\"\n)\nwhen {\n    (principal.id == \"${RuntimePrincipal}\" ||\n     principal.id == \"${OperatorPrincipal}\") &&\n    context.input.service_id == \"claims-api\" &&\n    (context.input.alarm_code == \"HIGH_ERROR_RATE\" ||\n     context.input.alarm_code == \"DATABASE_CORRUPTION\")\n};\n",
+                {
+                  "GatewayArn": {"Fn::GetAtt": ["BrokerGateway", "GatewayArn"]},
+                  "RuntimePrincipal": {"Fn::Sub": "arn:${AWS::Partition}:sts::${AWS::AccountId}:assumed-role/${BrokerRuntimeRole}"},
+                  "OperatorPrincipal": {"Fn::Sub": "arn:${AWS::Partition}:sts::${AWS::AccountId}:assumed-role/${BrokerOperatorRole}"}
+                }
               ]
             }
           }
@@ -455,8 +503,12 @@
           "Cedar": {
             "Statement": {
               "Fn::Sub": [
-                "permit (\n    principal is AgentCore::IamEntity,\n    action == AgentCore::Action::\"BrokerTools___inspect_service\",\n    resource == AgentCore::Gateway::\"${GatewayArn}\"\n)\nwhen {\n    context.input.service_id == \"claims-api\" &&\n    context.input.environment == \"demo\"\n};\n",
-                {"GatewayArn": {"Fn::GetAtt": ["BrokerGateway", "GatewayArn"]}}
+                "permit (\n    principal is AgentCore::IamEntity,\n    action == AgentCore::Action::\"BrokerTools___inspect_service\",\n    resource == AgentCore::Gateway::\"${GatewayArn}\"\n)\nwhen {\n    (principal.id == \"${RuntimePrincipal}\" ||\n     principal.id == \"${OperatorPrincipal}\") &&\n    context.input.service_id == \"claims-api\" &&\n    context.input.environment == \"demo\"\n};\n",
+                {
+                  "GatewayArn": {"Fn::GetAtt": ["BrokerGateway", "GatewayArn"]},
+                  "RuntimePrincipal": {"Fn::Sub": "arn:${AWS::Partition}:sts::${AWS::AccountId}:assumed-role/${BrokerRuntimeRole}"},
+                  "OperatorPrincipal": {"Fn::Sub": "arn:${AWS::Partition}:sts::${AWS::AccountId}:assumed-role/${BrokerOperatorRole}"}
+                }
               ]
             }
           }
@@ -476,8 +528,11 @@
           "Cedar": {
             "Statement": {
               "Fn::Sub": [
-                "permit (\n    principal is AgentCore::IamEntity,\n    action == AgentCore::Action::\"BrokerTools___execute_remediation\",\n    resource == AgentCore::Gateway::\"${GatewayArn}\"\n)\nwhen {\n    context.input.service_id == \"claims-api\" &&\n    context.input.environment == \"demo\" &&\n    context.input.action == \"restart_worker_pool\"\n};\n",
-                {"GatewayArn": {"Fn::GetAtt": ["BrokerGateway", "GatewayArn"]}}
+                "permit (\n    principal is AgentCore::IamEntity,\n    action == AgentCore::Action::\"BrokerTools___execute_remediation\",\n    resource == AgentCore::Gateway::\"${GatewayArn}\"\n)\nwhen {\n    principal.id == \"${OperatorPrincipal}\" &&\n    context.input.service_id == \"claims-api\" &&\n    context.input.environment == \"demo\" &&\n    context.input.action == \"restart_worker_pool\"\n};\n",
+                {
+                  "GatewayArn": {"Fn::GetAtt": ["BrokerGateway", "GatewayArn"]},
+                  "OperatorPrincipal": {"Fn::Sub": "arn:${AWS::Partition}:sts::${AWS::AccountId}:assumed-role/${BrokerOperatorRole}"}
+                }
               ]
             }
           }
@@ -540,6 +595,7 @@
     "ToolLambdaName": {"Value": {"Ref": "ToolLambda"}},
     "ExecutionLedgerName": {"Value": {"Ref": "ExecutionLedger"}},
     "RuntimeArn": {"Value": {"Fn::GetAtt": ["BrokerRuntime", "AgentRuntimeArn"]}},
-    "RuntimeRoleArn": {"Value": {"Fn::GetAtt": ["BrokerRuntimeRole", "Arn"]}}
+    "RuntimeRoleArn": {"Value": {"Fn::GetAtt": ["BrokerRuntimeRole", "Arn"]}},
+    "OperatorRoleArn": {"Value": {"Fn::GetAtt": ["BrokerOperatorRole", "Arn"]}}
   }
 }

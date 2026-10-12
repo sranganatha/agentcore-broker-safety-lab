@@ -71,13 +71,17 @@ def _read_evidence(request: dict[str, str]) -> Evidence:
     try:
         with client:
             tools = {tool.tool_name for tool in client.list_tools_sync()}
-            if READ_TOOLS - set(tools):
-                raise BrokerTransportError("required read tool is unavailable")
+            if tools != READ_TOOLS:
+                raise BrokerTransportError("runtime tool surface is not exactly read-only")
             runbook = _content(
                 client.call_tool_sync(
                     tool_use_id=f"{request['task_id']}-runbook",
                     name="BrokerTools___get_runbook_procedure",
-                    arguments={"service_id": request["service_id"], "alarm_code": request["alarm_code"]},
+                    arguments={
+                        "task_id": request["task_id"],
+                        "service_id": request["service_id"],
+                        "alarm_code": request["alarm_code"],
+                    },
                     read_timeout_seconds=timedelta(seconds=10),
                 )
             )
@@ -85,7 +89,11 @@ def _read_evidence(request: dict[str, str]) -> Evidence:
                 client.call_tool_sync(
                     tool_use_id=f"{request['task_id']}-inspection",
                     name="BrokerTools___inspect_service",
-                    arguments={"service_id": request["service_id"], "environment": request["environment"]},
+                    arguments={
+                        "task_id": request["task_id"],
+                        "service_id": request["service_id"],
+                        "environment": request["environment"],
+                    },
                     read_timeout_seconds=timedelta(seconds=10),
                 )
             )
