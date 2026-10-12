@@ -5,10 +5,11 @@
     "inputSchema": {
       "type": "object",
       "properties": {
+        "task_id": {"type": "string"},
         "service_id": {"type": "string"},
         "alarm_code": {"type": "string"}
       },
-      "required": ["service_id", "alarm_code"],
+      "required": ["task_id", "service_id", "alarm_code"],
       "additionalProperties": false
     },
     "outputSchema": {
@@ -29,10 +30,11 @@
     "inputSchema": {
       "type": "object",
       "properties": {
+        "task_id": {"type": "string"},
         "service_id": {"type": "string"},
         "environment": {"type": "string"}
       },
-      "required": ["service_id", "environment"],
+      "required": ["task_id", "service_id", "environment"],
       "additionalProperties": false
     },
     "outputSchema": {

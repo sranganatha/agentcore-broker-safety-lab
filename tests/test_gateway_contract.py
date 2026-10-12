@@ -42,6 +42,8 @@ class GatewayContractTests(unittest.TestCase):
         self.assertIn("deny_missing_invoke_permission", case_ids)
         self.assertIn("deny_unknown_action", case_ids)
         self.assertIn("deny_disallowed_remediation", case_ids)
+        self.assertIn("deny_runtime_remediation", case_ids)
+        self.assertIn("deny_other_iam_principal", case_ids)
         self.assertIn("allow_database_escalation_runbook", case_ids)
 
     def test_cedar_policy_names_each_manifest_action_once(self) -> None:
@@ -53,6 +55,8 @@ class GatewayContractTests(unittest.TestCase):
         self.assertEqual(len(expected), len(policy_actions))
         self.assertIn('principal is AgentCore::IamEntity', statement)
         self.assertEqual(3, statement.count('resource == AgentCore::Gateway::"${GatewayArn}"'))
+        self.assertEqual(2, statement.count('${RuntimePrincipal}'))
+        self.assertEqual(3, statement.count('${OperatorPrincipal}'))
 
 
 if __name__ == "__main__":

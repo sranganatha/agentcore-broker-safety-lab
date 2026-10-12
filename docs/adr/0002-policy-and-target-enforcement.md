@@ -14,6 +14,8 @@ Relying only on target validation would also allow unauthorized requests to reac
 Use AgentCore Policy for Gateway action and argument-class authorization:
 
 - Allow only the three `BrokerTools___*` actions.
+- Allow the Runtime principal to invoke only the two read tools.
+- Allow a separate operator principal to invoke the read tools and the remediation tool.
 - Limit reads to the `claims-api` demo evidence.
 - Limit remediation requests to `claims-api`, the `demo` environment, and `restart_worker_pool`.
 - Default all unnamed actions and argument classes to deny.
@@ -30,6 +32,8 @@ Attach the policy engine in `LOG_ONLY` first so the frozen cases can be compared
 ## Consequences
 
 - A policy allow is necessary but never sufficient for remediation execution.
+- Gateway IAM permission is scoped to the Gateway ARN; exact tool access is scoped by principal in Cedar.
+- The Runtime cannot see or invoke the remediation tool, even though the Lambda target still validates approval independently.
 - Evidence must name the denial source as IAM, Gateway schema, AgentCore Policy, or the Lambda target.
 - Policy and target checks intentionally overlap for the allowed remediation class as defense in depth.
 - This design does not claim distributed exactly-once delivery. It proves one effect for the demonstrated idempotency and reconciliation protocol.

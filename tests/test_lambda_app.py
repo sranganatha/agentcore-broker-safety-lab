@@ -30,7 +30,7 @@ class LambdaAppTests(unittest.TestCase):
             patch("builtins.print"),
         ):
             result = lambda_app.handler(
-                {"service_id": "claims-api", "environment": "demo"},
+                {"task_id": "task-001", "service_id": "claims-api", "environment": "demo"},
                 context("inspect_service"),
             )
 
@@ -40,13 +40,21 @@ class LambdaAppTests(unittest.TestCase):
 
     def test_log_contains_metadata_but_not_arguments(self) -> None:
         with patch("builtins.print") as output:
-            lambda_app._log("tool_dispatch", "inspect_service", "SUCCESS")
+            lambda_app._log("tool_dispatch", "task-001", "inspect_service", "SUCCESS")
 
         record = json.loads(output.call_args.args[0])
         self.assertEqual(
-            {"event_type": "tool_dispatch", "tool_name": "inspect_service", "outcome": "SUCCESS"},
+            {
+                "event_type": "tool_dispatch",
+                "task_id": "task-001",
+                "tool_name": "inspect_service",
+                "outcome": "SUCCESS",
+            },
             record,
         )
+
+    def test_log_rejects_untrusted_task_identifier(self) -> None:
+        self.assertEqual("unknown", lambda_app._task_id({"task_id": "unsafe value"}))
 
 
 if __name__ == "__main__":

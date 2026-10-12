@@ -154,7 +154,7 @@ The two lasting security decisions receive ADRs only when their AWS paths are im
 The repository currently proves strict contracts, canonical action identity, fixture integrity, validated local tool dispatch, exact approval transitions, concurrent in-memory idempotency, and response-loss reconciliation. It includes the conditional DynamoDB request boundary, but has not exercised it against a deployed table. It does not yet prove that AgentCore authentication, Gateway dispatch, Cedar evaluation, deployed Lambda and DynamoDB behavior, or CloudWatch correlation works as designed.
 
 - A SHA-256 action digest binds normalized content but does not authenticate an approver. The implemented operator identity and DynamoDB authorization path must supply that trust.
-- Offline tool definitions can drift from the deployed Gateway schema or Cedar policy. Later slices must compare the deployed capability surface and frozen policy corpus with the repository definitions.
+- Offline tool definitions can drift from the deployed Gateway schema or Cedar policy. Deployment verification compares the live capability surface and policy behavior with the repository contract.
 - Deterministic fixtures cover declared cases, not unknown model behavior or managed-service failures. Fixture results must never be presented as AWS evidence.
 - AgentCore APIs, regional support, quotas, and CloudFormation coverage may change while the project is developed. Deployment preflight and pinned evidence must record the versions and region actually tested.
 

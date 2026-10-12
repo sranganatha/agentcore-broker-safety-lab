@@ -53,6 +53,11 @@ def evaluate_gateway_case(case: Mapping[str, Any], tools: list[Mapping[str, Any]
     if not _matches_object_schema(arguments, tool["inputSchema"]):
         return ContractDecision(Decision.DENY, DecisionLayer.GATEWAY_SCHEMA, "INVALID_ARGUMENTS")
 
+    principal_role = case.get("principal_role")
+    allowed_roles = {"RUNTIME", "OPERATOR"} if tool["name"] != "execute_remediation" else {"OPERATOR"}
+    if principal_role not in allowed_roles:
+        return ContractDecision(Decision.DENY, DecisionLayer.POLICY, "PRINCIPAL_NOT_ALLOWED")
+
     allowed = _arguments_allowed(str(tool["name"]), arguments)
     if not allowed:
         return ContractDecision(Decision.DENY, DecisionLayer.POLICY, "ARGUMENT_CLASS_NOT_ALLOWED")
@@ -88,7 +93,10 @@ def _arguments_allowed(tool_name: str, arguments: Mapping[str, Any]) -> bool:
             and arguments.get("alarm_code") in {"HIGH_ERROR_RATE", "DATABASE_CORRUPTION"}
         )
     if tool_name == "inspect_service":
-        return arguments == {"service_id": "claims-api", "environment": "demo"}
+        return (
+            arguments.get("service_id") == "claims-api"
+            and arguments.get("environment") == "demo"
+        )
     if tool_name == "execute_remediation":
         return (
             arguments.get("service_id") == "claims-api"
