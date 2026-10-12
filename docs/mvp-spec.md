@@ -41,11 +41,11 @@ The local fixture path validates contracts and safety logic but is not evidence 
 
 ### `get_runbook_procedure`
 
-Input: service ID and alarm code. Output: exact synthetic procedure, allowed action, and source digest.
+Input: task ID, service ID, and alarm code. Output: exact synthetic procedure, allowed action, and source digest.
 
 ### `inspect_service`
 
-Input: service ID and environment. Output: deterministic synthetic health and active alarm.
+Input: task ID, service ID, and environment. Output: deterministic synthetic health and active alarm.
 
 ### `execute_remediation`
 
@@ -119,7 +119,7 @@ A stable idempotency key identifies one intended effect. A repeated request retu
 
 - Account-free validation runs through Podman without credentials or network access.
 - One bounded Nova Micro agent runs in AgentCore Runtime.
-- Runtime uses AgentCore Gateway and AgentCore Policy for all three tools.
+- Runtime uses the two read tools through AgentCore Gateway and AgentCore Policy; the separate operator identity invokes remediation.
 - AgentCore Policy is evaluated in shadow mode before promotion to enforcement.
 - Runtime cannot approve its own action.
 - Changed, expired, and consumed approvals fail with stable codes.
@@ -145,15 +145,15 @@ These are bounded MVP choices, not universal recommendations. Managed-service cl
 | CloudWatch-correlated evidence | Adopt a separate observability platform | Native service telemetry provides the shortest path to correlate Runtime, Gateway, Policy, Lambda, and DynamoDB activity | Retention, ingestion cost, payload redaction, and cross-account operations remain deployment responsibilities |
 | Synthetic service action | Modify a real operational system | A deterministic target permits denial, replay, and response-loss testing without risking infrastructure | Results demonstrate control behavior, not readiness for a real provider's failure and idempotency semantics |
 
-The two lasting security decisions receive ADRs only when their AWS paths are implemented: workload identity boundaries, and the split between policy and target enforcement.
+The implemented workload identity boundary, policy and target enforcement split, and direct-code Runtime choice are recorded in the three ADRs.
 
 ## 11. Known risks and limitations
 
-### Current foundation
+### Verified foundation
 
-The repository currently proves strict contracts, canonical action identity, fixture integrity, validated local tool dispatch, exact approval transitions, concurrent in-memory idempotency, and response-loss reconciliation. It includes the conditional DynamoDB request boundary, but has not exercised it against a deployed table. It does not yet prove that AgentCore authentication, Gateway dispatch, Cedar evaluation, deployed Lambda and DynamoDB behavior, or CloudWatch correlation works as designed.
+The repository proves strict contracts, canonical action identity, fixture integrity, validated local tool dispatch, exact approval transitions, concurrent in-memory idempotency, and response-loss reconciliation. Bounded AWS verification also exercised IAM-authenticated AgentCore Runtime and Gateway calls, Cedar policy in shadow and enforcement modes, Lambda dispatch, DynamoDB approval and receipt transitions, Nova Micro proposal generation, CloudWatch task correlation, and complete stack teardown.
 
-- A SHA-256 action digest binds normalized content but does not authenticate an approver. The implemented operator identity and DynamoDB authorization path must supply that trust.
+- A SHA-256 action digest binds normalized content but does not authenticate an approver. The separate operator role and DynamoDB authorization path supply that trust for the demonstrated workflow.
 - Offline tool definitions can drift from the deployed Gateway schema or Cedar policy. Deployment verification compares the live capability surface and policy behavior with the repository contract.
 - Deterministic fixtures cover declared cases, not unknown model behavior or managed-service failures. Fixture results must never be presented as AWS evidence.
 - AgentCore APIs, regional support, quotas, and CloudFormation coverage may change while the project is developed. Deployment preflight and pinned evidence must record the versions and region actually tested.

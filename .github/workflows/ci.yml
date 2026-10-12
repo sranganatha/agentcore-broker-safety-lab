@@ -1,0 +1,19 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Podman
+        run: sudo apt-get update && sudo apt-get install --yes podman
+      - name: Run credential-free container validation
+        run: make test-container

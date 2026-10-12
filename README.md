@@ -87,9 +87,10 @@ git clone https://github.com/sranganatha/agentcore-broker-safety-lab.git
 cd agentcore-broker-safety-lab
 podman info
 make test-container
+make demo
 ```
 
-The tooling image validates source compilation, contract drift, and CloudFormation structure. The application image then runs the complete account-free test suite. All validation containers run with networking disabled, and the host receives no Python packages.
+The tooling image validates source compilation, contract drift, and CloudFormation structure. The application image then runs the complete account-free test suite. `make demo` exercises the deterministic fixture workflow and writes `artifacts/offline-report.json` and `artifacts/offline-report.md`. All validation containers run with networking disabled, and the host receives no Python packages.
 
 ## AWS validation
 
@@ -121,3 +122,6 @@ If the non-root credentials are stored under a named profile, add `AWS_PROFILE=<
 - [Workload identity boundary](docs/adr/0001-workload-identity-boundary.md)
 - [Policy and target enforcement](docs/adr/0002-policy-and-target-enforcement.md)
 - [Direct-code AgentCore Runtime](docs/adr/0003-direct-code-runtime.md)
+- [AWS release evidence](artifacts/aws-release-evidence.md)
+- [Release notes](docs/releases/v0.1.0.md)
+- [Changelog](CHANGELOG.md)

@@ -7,7 +7,7 @@ AWS_PROFILE ?= default
 APPLICATION_STACK ?= agentcore-broker-safety-lab
 BOOTSTRAP_STACK ?= agentcore-broker-safety-lab-bootstrap
 
-.PHONY: approve-aws check cloud-image deploy-aws destroy-aws package-aws policy-enforce policy-shadow test test-container verify-approval-aws verify-aws verify-aws-enforce verify-runtime-aws
+.PHONY: approve-aws check cloud-image demo deploy-aws destroy-aws package-aws policy-enforce policy-shadow test test-container verify-approval-aws verify-aws verify-aws-enforce verify-runtime-aws
 
 check:
 	podman build --file Containerfile.tools --tag $(TOOLS_IMAGE) .
@@ -19,6 +19,10 @@ test:
 	podman run --rm --network none $(IMAGE)
 
 test-container: check test
+
+demo:
+	podman build --tag $(IMAGE) .
+	podman run --rm --network none --volume "$(CURDIR):/workspace" $(IMAGE) python -m agentcore_broker_safety_lab.demo /workspace/artifacts
 
 cloud-image:
 	podman build --file Containerfile.tools --tag $(TOOLS_IMAGE) .
