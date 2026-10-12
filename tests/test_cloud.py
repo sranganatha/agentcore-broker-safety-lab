@@ -6,19 +6,26 @@ from typing import Any
 if "boto3" not in sys.modules:
     boto3 = ModuleType("boto3")
     boto3.Session = object
+    transfer = ModuleType("boto3.s3.transfer")
+    transfer.TransferConfig = object
     auth = ModuleType("botocore.auth")
     auth.SigV4Auth = object
     awsrequest = ModuleType("botocore.awsrequest")
     awsrequest.AWSRequest = object
+    config = ModuleType("botocore.config")
+    config.Config = object
     exceptions = ModuleType("botocore.exceptions")
     exceptions.ClientError = type("ClientError", (Exception,), {})
     exceptions.WaiterError = type("WaiterError", (Exception,), {})
     sys.modules.update(
         {
             "boto3": boto3,
+            "boto3.s3": ModuleType("boto3.s3"),
+            "boto3.s3.transfer": transfer,
             "botocore": ModuleType("botocore"),
             "botocore.auth": auth,
             "botocore.awsrequest": awsrequest,
+            "botocore.config": config,
             "botocore.exceptions": exceptions,
         }
     )
