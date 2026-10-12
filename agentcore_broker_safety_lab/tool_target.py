@@ -10,7 +10,7 @@ from typing import Any
 from .canonical import action_digest, approval_request_id
 from .contracts import ApprovalRequest, ApprovalStatus, ContractError, ErrorCode, ExecutionReceipt
 from .ledger import InMemoryLedger, Ledger
-from .validate_fixtures import ROOT, validate_all
+from .validate_fixtures import ROOT, validate_runtime_fixtures
 
 
 TOOL_DELIMITER = "___"
@@ -57,7 +57,7 @@ def _receipt_response(receipt: ExecutionReceipt) -> dict[str, Any]:
 
 class BrokerToolTarget:
     def __init__(self, ledger: Ledger | None = None) -> None:
-        validate_all()
+        validate_runtime_fixtures()
         self.ledger = ledger or InMemoryLedger()
         self._runbooks = self._load_fixture("synthetic_runbooks.json", "runbook")
         self._services = self._load_fixture("synthetic_services.json", "service")

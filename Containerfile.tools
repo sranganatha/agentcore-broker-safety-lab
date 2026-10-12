@@ -5,4 +5,6 @@ COPY requirements.lock .
 RUN pip install --no-cache-dir --requirement requirements.lock
 
 COPY . .
+RUN python -m compileall -q agentcore_broker_safety_lab scripts tests \
+    && python -m agentcore_broker_safety_lab.validate_fixtures
 CMD ["cfn-lint", "--template", "infra/application.json"]
